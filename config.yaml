@@ -1,0 +1,29 @@
+sequence-size: 2
+
+datasets:
+    kitti:
+      root-path: "C:\\Users\\ajava\\Datasets\\KITTI\\raw_unsync"
+      image-width: 1024
+      image-height: 64
+      fov-up: 3.
+      fov-down: -25.
+      train:
+          "2011_09_30": [27, 20]
+      test:
+          "2011_09_30": [1, 5]
+          "2011_10_05": [10, 8, 45]
+      val:
+        2011_09_10: [3]
+    second:
+      root-path: "C:\\Users\\ajava\\Datasets\\KITTI\\data"
+      train:
+          2011_09_26: [15, 35]
+          2011_09_27: [28, 34]
+      test:
+          2011_09_31: [1, 5]
+      val:
+        2011_09_10: [3]
+
+
+
+
