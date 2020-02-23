@@ -9,6 +9,8 @@ import torch.utils.data as data
 
 from deeplio.common import utils
 from deeplio.common.laserscan import LaserScan
+from deeplio.common.logger import PyLogger
+
 
 class KittiRawData:
     """ KiitiRawData
@@ -33,14 +35,6 @@ class KittiRawData:
         # Pre-load data that isn't returned as a generator
         #self._load_calib()
         self._load_timestamps()
-        self._load_oxts()
-
-    @property
-    def velo(self):
-        """Generator to read velodyne [x,y,z,reflectance] scan data from binary files."""
-        # Return a generator yielding Velodyne scans.
-        # Each scan is a Nx4 array of [x,y,z,reflectance]
-        return utils.yield_velo_scans(self.velo_files)
 
     def __len__(self):
         return len(self.velo_files)
@@ -53,10 +47,10 @@ class KittiRawData:
         scan = LaserScan(H=self.image_height, W=self.image_width, fov_up=self.fov_up, fov_down=self.fov_down)
         scan.open_scan(self.velo_files[idx])
         scan.do_range_projection()
-        xyz = scan.proj_xyz
-        remissions = scan.proj_remission
-        range = scan.proj_range
-        image = np.dstack((xyz, remissions, range))
+        proj_xyz = scan.proj_xyz
+        proj_remission = scan.proj_remission
+        proj_range = scan.proj_range
+        image = np.dstack((proj_xyz, proj_remission, proj_range))
         return image
 
     def _get_file_lists(self):
@@ -73,6 +67,9 @@ class KittiRawData:
                 self.oxts_files, self.frames)
             self.velo_files = utils.subselect_files(
                 self.velo_files, self.frames)
+
+        self.oxts_files = np.asarray(self.oxts_files)
+        self.velo_files = np.asarray(self.velo_files)
 
     def _load_calib_rigid(self, filename):
         """Read a rigid transform calibration file as a numpy.array."""
@@ -120,28 +117,34 @@ class KittiRawData:
         """Load OXTS data from file."""
         self.oxts = np.array(utils.load_oxts_packets_and_poses(self.oxts_files))
 
-    def get_data(self, start, length):
+    def _load_oxt_lazy(self, index):
+        oxt = utils.load_oxts_packets_and_poses([self.oxts_files[index]])
+        return oxt
+
+    def get_data(self, start_index, length):
         """
         Get a sequence of velodyne and imu data
-        :param start: start index
+        :param start_index: start index
         :param length: length of sequence
         :return:
         """
-        velo_start_ts = self.timestamps_velo[start]
-        velo_stop_ts = self.timestamps_velo[start + length - 1]
+        velo_start_ts = self.timestamps_velo[start_index]
+        velo_stop_ts = self.timestamps_velo[start_index + length - 1]
 
-        images = [self.get_velo_image(idx) for idx in range(start, start+length)]
+        images = [self.get_velo_image(idx) for idx in range(start_index, start_index + length)]
 
         mask = ((self.timestamps_imu >= velo_start_ts) & (self.timestamps_imu < velo_stop_ts))
-        imu_ts = self.timestamps_imu[mask]
-        imu_values = [[otx[0].ax, otx[0].ay, otx[0].az, otx[0].wx, otx[0].wy, otx[0].wz] for otx in self.oxts[mask]]
+        indices = np.argwhere(mask).flatten();
+        imu_ts = self.timestamps_imu[indices]
+        if len(imu_ts) == 0:
+            print("Warning: No imu data found for index {}, velo-timestamps: [{} - {}]".format(start_index, velo_start_ts, velo_stop_ts))
+            imu_values = [0.] * 6
+        else:
+            otxs = [self._load_oxt_lazy(index) for index in indices]
+            imu_values = [[otx[0].packet.ax, otx[0].packet.ay, otx[0].packet.az, otx[0].packet.wx, otx[0].packet.wy, otx[0].packet.wz] for otx in otxs]
+            gt = [otx[0].T_w_imu.flatten() for otx in otxs]
 
-        ground_truth = [otx[1].flatten() for otx in self.oxts[mask]]
-
-        data = {}
-        data['images'] = images
-        data['imu'] = imu_values
-        data['ground-truth'] = ground_truth
+        data = {'images': images, 'imu': imu_values, 'ground-truth': gt}
         return data
 
 
@@ -153,7 +156,8 @@ class Kitti(data.Dataset):
         :param transform:
         """
         ds_config = cfg['datasets']['kitti']
-        self.root_path = ds_config['root-path']
+        root_path = ds_config['root-path']
+
         self.transform = transform
 
         self.ds_type = ds_type
@@ -161,63 +165,90 @@ class Kitti(data.Dataset):
 
         self.dataset = []
         self.length_each_drive = []
-        self.length = 0
+        self.bins = []
+
+        # Since we are intrested in sequence of lidar frame - e.g. multiple frame at each iteration,
+        # depending on the sequence size and the current wanted index coming from pytorch dataloader
+        # we must switch between each drive if not enough frames exists in that specific drive wanted from dataloader,
+        # therefor we separate valid indices in each drive in bins.
+        last_bin_end = -1
         for date, drives in ds_config[self.ds_type].items():
             for drive in drives:
-                ds = KittiRawData(self.root_path, str(date), str(drive), ds_config)
+                ds = KittiRawData(root_path, str(date), str(drive), ds_config)
+
                 length = len(ds)
+
+                bin_start = last_bin_end + 1
+                bin_end = bin_start + length - self.seq_size
+                self.bins.append([bin_start, bin_end])
+                last_bin_end = bin_end
+
                 self.length_each_drive.append(length)
-                self.length += length
                 self.dataset.append(ds)
 
+        self.bins = np.asarray(self.bins)
         self.length_each_drive = np.array(self.length_each_drive)
-        self.length -= self.seq_size
-        self.num_drives = len(self.length_each_drive)
+
+        self.length = self.bins.flatten()[-1] + 1
+
+        self.logger = PyLogger(name="KittiDataset")
+
+        # printing dataset informations
+        self.logger.info("Kitti-Dataset Informations")
+        self.logger.info("DS-Type: {}, Length: {}, Seq.length: {}".format(ds_type, self.length, self.seq_size))
+        for i in range(len(self.length_each_drive)):
+            date = self.dataset[i].date
+            drive = self.dataset[i].drive
+            length = self.length_each_drive[i]
+            bins = self.bins[i]
+            self.logger.info("Date: {}, Drive: {}, length: {}, bins: {}".format(date, drive, length, bins))
 
     def __len__(self):
         return self.length
 
-    def __getitem__(self, index, test=False):
+    def __getitem__(self, index):
         if torch.is_tensor(index):
             index = index.tolist()
 
-        total_length = 0
-        for num_drive in range(self.num_drives):
-            total_length += self.length_each_drive[num_drive] - self.seq_size
-            if index <= total_length:
+        idx = -1
+        num_drive = -1
+        for i, bin in enumerate(self.bins):
+            bin_start = bin[0]
+            bin_end = bin[1]
+            if bin_start <= index <= bin_end:
+                idx = index - bin_start
+                num_drive = i
                 break
 
-        if num_drive > 0:
-            total_len_prev_drive = np.cumsum(self.length_each_drive - self.seq_size)
-            idx = index - total_len_prev_drive[num_drive - 1] - 1
-        else:
-            idx = index
+        if idx < 0 or num_drive < 0:
+            print("Error: No bins and no drive number found!")
+            return None
 
-        if not test:
-            data = self.dataset[num_drive].get_data(idx, self.seq_size)
-        else:
-            data = idx
+        start = time.time()
+        data = self.dataset[num_drive].get_data(idx, self.seq_size)
+        end = time.time()
+        print("Delta-Time: {}".format(end - start))
+
         return data
 
 
 if __name__ == "__main__":
     from matplotlib import  pyplot as plt
+    import time
 
     with open("../config.yaml") as f:
         cfg = yaml.safe_load(f)
     dataset = Kitti(config=cfg)
-
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1)
-    #for i in range(len(dataset)):
-    #    if i > 1107:
-    #        pass
-    # print(i, dataset.__getitem__(i, test=True))
 
     for i, data in enumerate(dataloader):
-        img1, img2 = data['images']
+        img1, img2, _, _, _ = data['images']
         imu = data['imu']
         gt = data['ground-truth']
 
-        plt.imshow(img1[:, :, 0])
+        im1 = img1[0].numpy()
+        im2 = img2[0].numpy()
+
+        plt.imshow(im1[:, :, 0])
         plt.show()
     print(dataset)
