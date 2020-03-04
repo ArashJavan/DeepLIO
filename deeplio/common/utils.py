@@ -153,9 +153,9 @@ def yield_images(imfiles, mode):
 
 def load_velo_scan(file):
     scan = None
-    try:
+    if '.bin' in file:
         scan = load_velo_scan_bin(file)
-    except Exception as ex:
+    elif '.txt' in file:
         scan = load_velo_scan_txt(file)
     return scan
 

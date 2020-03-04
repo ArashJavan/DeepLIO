@@ -16,6 +16,8 @@ class KittiRawData:
     """ KiitiRawData
     more or less same as pykitti with some application specific changes
     """
+    MAX_DIST_HDL64 = 120.
+
     def __init__(self, base_path, date, drive, cfg, **kwargs):
         self.drive = drive
         self.date = date
@@ -47,10 +49,13 @@ class KittiRawData:
         scan = LaserScan(H=self.image_height, W=self.image_width, fov_up=self.fov_up, fov_down=self.fov_down)
         scan.open_scan(self.velo_files[idx])
         scan.do_range_projection()
-        proj_xyz = scan.proj_xyz
+        # collect projected data and adapt ranges
+
+        proj_xyz = scan.proj_xyz / self.MAX_DIST_HDL64
         proj_remission = scan.proj_remission
-        proj_range = scan.proj_range
-        image = np.dstack((proj_xyz, proj_remission, proj_range))
+        proj_range = 1 / scan.proj_range
+        proj_range_xy = 1 / scan.proj_range_xy
+        image = np.dstack((proj_xyz, proj_remission, proj_range, proj_range_xy))
         return image
 
     def _get_file_lists(self):
@@ -225,7 +230,8 @@ class Kitti(data.Dataset):
             return None
 
         start = time.time()
-        data = self.dataset[num_drive].get_data(idx, self.seq_size)
+        dataset = self.dataset[num_drive]
+        data = dataset.get_data(idx, self.seq_size)
         end = time.time()
         print("Delta-Time: {}".format(end - start))
 

@@ -25,18 +25,22 @@ class LaserScan:
         self.remissions = np.zeros((0, 1), dtype=np.float32)    # [m ,1]: remission
 
         # projected range image - [H,W] range (-1 is no data)
-        self.proj_range = np.full((self.proj_H, self.proj_W), -1,
+        self.proj_range = np.full((self.proj_H, self.proj_W), 1e6,
                                   dtype=np.float32)
+
+        # projected range image xy-axis - [H,W] range (-1 is no data)
+        self.proj_range_xy = np.full((self.proj_H, self.proj_W), 1e6,
+                                     dtype=np.float32)
 
         # unprojected range (list of depths for each point)
         self.unproj_range = np.zeros((0, 1), dtype=np.float32)
 
         # projected point cloud xyz - [H,W,3] xyz coord (-1 is no data)
-        self.proj_xyz = np.full((self.proj_H, self.proj_W, 3), -1,
+        self.proj_xyz = np.full((self.proj_H, self.proj_W, 3), 0.,
                                 dtype=np.float32)
 
         # projected remission - [H,W] intensity (-1 is no data)
-        self.proj_remission = np.full((self.proj_H, self.proj_W), -1,
+        self.proj_remission = np.full((self.proj_H, self.proj_W), 0.,
                                       dtype=np.float32)
 
         # projected index (for each pixel, what I am in the pointcloud)
@@ -120,6 +124,7 @@ class LaserScan:
 
         # get depth of all points
         depth = np.linalg.norm(self.points, 2, axis=1)
+        depth_xy = np.linalg.norm(self.points[:, 0:2], 2, axis=1)
 
         # get scan components
         scan_x = self.points[:, 0]
@@ -156,6 +161,7 @@ class LaserScan:
         indices = np.arange(depth.shape[0])
         order = np.argsort(depth)[::-1]
         depth = depth[order]
+        depth_xy = depth_xy[order]
         indices = indices[order]
         points = self.points[order]
         remission = self.remissions[order]
@@ -164,6 +170,7 @@ class LaserScan:
 
         # assing to images
         self.proj_range[proj_y, proj_x] = depth
+        self.proj_range_xy[proj_y, proj_x] = depth_xy
         self.proj_xyz[proj_y, proj_x] = points
         self.proj_remission[proj_y, proj_x] = remission
         self.proj_idx[proj_y, proj_x] = indices
