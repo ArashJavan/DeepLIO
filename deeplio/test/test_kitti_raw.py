@@ -7,6 +7,7 @@ import open3d as o3d
 
 import matplotlib.pyplot as plt
 from deeplio.datasets.kitti import KittiRawData
+from deeplio.common.laserscan import LaserScan
 
 
 def test_kittiraw(args, cfg):
@@ -23,6 +24,11 @@ def test_kittiraw(args, cfg):
     root_path = ds_config['root-path']
     ds_type = "train"
     seq_size = cfg['sequence-size']
+
+    image_width = ds_config['image-width']
+    image_height = ds_config['image-height']
+    fov_up = ds_config['fov-up']
+    fov_down = ds_config['fov-down']
 
     for date, drives in ds_config[ds_type].items():
         for drive in drives:
@@ -51,20 +57,13 @@ def test_kittiraw(args, cfg):
                 gt = data['ground-truth']
                 print("-------------------------------------------------")
                 for j, imgs in enumerate(images):
-
-                    points = imgs[:, :, 0:3].reshape(-1, 3)
-                    indices = np.where(np.all(points == [0., 0., 0.], axis=1))[0]
-                    points = np.delete(points, indices, axis=0)
-                    points *= 120.
-                    pcd = o3d.geometry.PointCloud()
-                    pcd.points = o3d.utility.Vector3dVector(points)
-                    o3d.visualization.draw_geometries([pcd])
-                    for k in range(len(img_axis)):
-                        img = imgs[:, :, k]
-                        print("{}.{}.{}: min={}, max={}".format(i, j, img_axis[k], img.min(), img.max()))
-                        axis_path = os.path.join(output_dir, date, drive, img_axis[k])
-                        img_path = os.path.join(axis_path, "{}_{}_{}.png".format(img_axis[k], i, j))
-                        plt.imsave(img_path, img)
+                    if j == 0:
+                        for k in range(len(img_axis)):
+                            img = imgs[:, :, k]
+                            print("{}.{}.{}: min={}, max={}".format(i, j, img_axis[k], img.min(), img.max()))
+                            axis_path = os.path.join(output_dir, date, drive, img_axis[k])
+                            img_path = os.path.join(axis_path, "{}_{}_{}.png".format(img_axis[k], i, j))
+                            plt.imsave(img_path, img)
 
 
 if __name__ == "__main__":

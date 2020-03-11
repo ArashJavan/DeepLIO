@@ -6,6 +6,7 @@ https://github.com/PRBonn/lidar-bonnetal
 import numpy as np
 from deeplio.common import utils
 
+import open3d as o3d
 
 class LaserScan:
     """Class that contains LaserScan with x,y,z,r"""
@@ -152,7 +153,7 @@ class LaserScan:
         proj_y = np.floor(proj_y)
         proj_y = np.minimum(self.proj_H - 1, proj_y)
         proj_y = np.maximum(0, proj_y).astype(np.int32)   # in [0,H-1]
-        self.proj_y = np.copy(proj_y)  # stope a copy in original order
+        self.proj_y = np.copy(proj_y)  # store a copy in original order
 
         # copy of depth in original order
         self.unproj_range = np.copy(depth)
@@ -175,3 +176,32 @@ class LaserScan:
         self.proj_remission[proj_y, proj_x] = remission
         self.proj_idx[proj_y, proj_x] = indices
         self.proj_mask = (self.proj_idx > 0).astype(np.int32)
+
+    def do_normal_projection(self):
+        # projected range image - [H,W] range (-1 is no data)
+        self.proj_normals = np.full((self.proj_H, self.proj_W, 3), 0., dtype=np.float32)
+
+        points = self.proj_xyz.reshape(-1, 3)
+
+        indices = np.where(np.all(points == [0., 0., 0.], axis=1))[0]
+        points = np.delete(points, indices, axis=0)
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.5, max_nn=50))
+        o3d.visualization.draw_geometries([pcd])
+
+        normals = np.asarray(pcd.normals)
+
+        depth = np.linalg.norm(points, 2, axis=1)
+        indices = np.arange(depth.shape[0])
+        order = np.argsort(depth)[::-1]
+        depth = depth[order]
+
+        normals = normals[order]
+        proj_y = self.proj_y[order]
+        proj_x = self.proj_x[order]
+        self.proj_normals[proj_y, proj_x] = normals
+        return self.proj_normals
+
+
