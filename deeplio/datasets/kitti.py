@@ -3,6 +3,8 @@ import torch
 import glob
 import yaml
 import datetime as dt
+import random
+
 import numpy as np
 
 import torch.utils.data as data
@@ -17,6 +19,7 @@ class KittiRawData:
     more or less same as pykitti with some application specific changes
     """
     MAX_DIST_HDL64 = 120.
+    IMU_LENGTH = 10.25
 
     def __init__(self, base_path, date, drive, cfg, **kwargs):
         self.drive = drive
@@ -29,6 +32,7 @@ class KittiRawData:
         self.image_height = cfg['image-height']
         self.fov_up = cfg['fov-up']
         self.fov_down = cfg['fov-down']
+        self.seq_size = cfg['sequence-size']
 
         # Find all the data files
         self._get_file_lists()
@@ -37,6 +41,9 @@ class KittiRawData:
         # Pre-load data that isn't returned as a generator
         #self._load_calib()
         self._load_timestamps()
+        #self._load_oxts()
+
+        self.imu_get_counter = 0
 
     def __len__(self):
         return len(self.velo_files)
@@ -122,9 +129,9 @@ class KittiRawData:
         """Load OXTS data from file."""
         self.oxts = np.array(utils.load_oxts_packets_and_poses(self.oxts_files))
 
-    def _load_oxt_lazy(self, index):
-        oxt = utils.load_oxts_packets_and_poses([self.oxts_files[index]])
-        return oxt
+    def _load_oxts_lazy(self, indices):
+        oxts = utils.load_oxts_packets_and_poses(self.oxts_files[indices])
+        return oxts
 
     def get_data(self, start_index, length):
         """
@@ -133,23 +140,48 @@ class KittiRawData:
         :param length: length of sequence
         :return:
         """
-        velo_start_ts = self.timestamps_velo[start_index]
-        velo_stop_ts = self.timestamps_velo[start_index + length - 1]
 
+        velo_timespamps =  [self.timestamps_velo[idx] for idx in range(start_index, start_index + length)]
         images = [self.get_velo_image(idx) for idx in range(start_index, start_index + length)]
 
-        mask = ((self.timestamps_imu >= velo_start_ts) & (self.timestamps_imu < velo_stop_ts))
-        indices = np.argwhere(mask).flatten();
-        imu_ts = self.timestamps_imu[indices]
-        if len(imu_ts) == 0:
-            print("Warning: No imu data found for index {}, velo-timestamps: [{} - {}]".format(start_index, velo_start_ts, velo_stop_ts))
-            imu_values = [0.] * 6
-        else:
-            otxs = [self._load_oxt_lazy(index) for index in indices]
-            imu_values = [[otx[0].packet.ax, otx[0].packet.ay, otx[0].packet.az, otx[0].packet.wx, otx[0].packet.wy, otx[0].packet.wz] for otx in otxs]
-            gt = [otx[0].T_w_imu.flatten() for otx in otxs]
+        # difference combination of a sequence length
+        # e.g. for sequence-length = 3, we have following combinations
+        # [0, 1], [0, 2], [1, 2]
+        combinations = [[x, y] for y in range(length) for x in range(y)]
 
-        data = {'images': images, 'imu': imu_values, 'ground-truth': gt}
+        # we do not want that the network memorizes an specific combination pattern
+        random.shuffle(combinations)
+
+        data = []
+        for combi in combinations:
+            idx_0 = combi[0]
+            idx_1 = combi[1]
+
+            image_0 = images[idx_0]
+            image_1 = images[idx_1]
+
+            velo_start_ts = velo_timespamps[idx_0]
+            velo_stop_ts = velo_timespamps[idx_1]
+
+            mask = ((self.timestamps_imu >= velo_start_ts) & (self.timestamps_imu < velo_stop_ts))
+            indices = np.argwhere(mask).flatten();
+            #indices = range(self.imu_get_counter, np.ceil(self.imu_get_counter + (self.IMU_LENGTH * (self.seq_size - 1))).astype(np.int))
+            #self.imu_get_counter += np.ceil(self.IMU_LENGTH).astype(np.int)
+
+            if len(indices) == 0:
+                print("Warning: No imu data found for index {}, velo-timestamps: [{} - {}]".format(start_index, velo_start_ts, velo_stop_ts))
+                imu_values = [0.]
+                gt = [None]
+            else:
+                oxts = self._load_oxts_lazy(indices)
+                #otxs = [self.oxts[index] for index in indices]
+                imu_values = [[oxt.packet.ax, oxt.packet.ay, oxt.packet.az, oxt.packet.wx, oxt.packet.wy, oxt.packet.wz] for oxt in oxts]
+                gt = [otx.T_w_imu.flatten() for otx in oxts]
+
+                # print("V: {} I:{}\n   {}   {} \n **********".format(velo_start_ts, imu_ts[0], velo_stop_ts, imu_ts[-1]))
+
+            data_dict = {'images': [image_0, image_1], 'imu': imu_values, 'ground-truth': gt}
+            data.append(data_dict)
         return data
 
 
@@ -166,7 +198,7 @@ class Kitti(data.Dataset):
         self.transform = transform
 
         self.ds_type = ds_type
-        self.seq_size = cfg['sequence-size']
+        self.seq_size = ds_config['sequence-size']
 
         self.dataset = []
         self.length_each_drive = []
@@ -233,7 +265,7 @@ class Kitti(data.Dataset):
         dataset = self.dataset[num_drive]
         data = dataset.get_data(idx, self.seq_size)
         end = time.time()
-        print("Delta-Time: {}".format(end - start))
+        print("idx:{}, Delta-Time: {}".format(index, end - start))
 
         return data
 
@@ -241,20 +273,56 @@ class Kitti(data.Dataset):
 if __name__ == "__main__":
     from matplotlib import  pyplot as plt
     import time
+    import open3d as o3d
+    import copy
 
-    with open("../config.yaml") as f:
+    def draw_registration_result(source, target, transformation):
+        source_temp = copy.deepcopy(source)
+        target_temp = copy.deepcopy(target)
+        source_temp.paint_uniform_color([1, 0.706, 0])
+        target_temp.paint_uniform_color([0, 0.651, 0.929])
+        source_temp.transform(transformation)
+        o3d.visualization.draw_geometries([source_temp, target_temp])
+
+    with open("../../config.yaml") as f:
         cfg = yaml.safe_load(f)
     dataset = Kitti(config=cfg)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1)
 
-    for i, data in enumerate(dataloader):
-        img1, img2, _, _, _ = data['images']
-        imu = data['imu']
-        gt = data['ground-truth']
+    #data = dataset.__getitem__(334)
+    #imu = data['imu']
+    #gt = data['ground-truth']
 
-        im1 = img1[0].numpy()
-        im2 = img2[0].numpy()
+    for i, datas in enumerate(dataloader):
+        data = datas[0]
+        img_0 = data['images'][0]
+        img_1 = data['images'][1]
 
-        plt.imshow(im1[:, :, 0])
-        plt.show()
+        xyz_0 = img_0[0, :, :, :3].numpy()
+        xyz_0 = xyz_0.reshape(-1, 3) * KittiRawData.MAX_DIST_HDL64
+        indices = np.where(np.all(xyz_0 == [0., 0., 0.], axis=1))[0]
+        xyz_0 = np.delete(xyz_0, indices, axis=0)
+
+        xyz_1 = img_1[0, :, :, :3].numpy()
+        xyz_1 = xyz_1.reshape(-1, 3) * KittiRawData.MAX_DIST_HDL64
+        indices = np.where(np.all(xyz_1 == [0., 0., 0.], axis=1))[0]
+        xyz_1 = np.delete(xyz_1, indices, axis=0)
+
+        T_gt = data['ground-truth'][-1].numpy().reshape(4, 4)
+
+        pcd_0 = o3d.geometry.PointCloud()
+        pcd_0.points = o3d.utility.Vector3dVector(xyz_0)
+
+        pcd_1 = o3d.geometry.PointCloud()
+        pcd_1.points = o3d.utility.Vector3dVector(xyz_1)
+
+        draw_registration_result(pcd_0, pcd_1, np.identity(4))
+        draw_registration_result(pcd_0, pcd_1, T_gt)
+
+        #
+        # im1 = img1[0].numpy()
+        # im2 = img2[0].numpy()
+        #
+        # plt.imshow(im1[:, :, 0])
+        # plt.show()
     print(dataset)
