@@ -140,17 +140,30 @@ class KittiRawData:
         :param length: length of sequence
         :return:
         """
-
-        velo_timespamps =  [self.timestamps_velo[idx] for idx in range(start_index, start_index + length)]
-        images = [self.get_velo_image(idx) for idx in range(start_index, start_index + length)]
+        velo_timespamps = [self.timestamps_velo[idx] for idx in range(start_index, start_index + length)]
 
         # difference combination of a sequence length
         # e.g. for sequence-length = 3, we have following combinations
         # [0, 1], [0, 2], [1, 2]
         combinations = [[x, y] for y in range(length) for x in range(y)]
-
         # we do not want that the network memorizes an specific combination pattern
         random.shuffle(combinations)
+
+        for combi in combinations:
+            idx_0 = combi[0]
+            idx_1 = combi[1]
+
+            velo_start_ts = velo_timespamps[idx_0]
+            velo_stop_ts = velo_timespamps[idx_1]
+
+
+            mask = ((self.timestamps_imu >= velo_start_ts) & (self.timestamps_imu < velo_stop_ts))
+            indices = np.argwhere(mask).flatten()
+            if len(indices) == 0:
+                data = [{'images': [0.], 'imu': [0.], 'ground-truth': [0.]}]
+                return data
+
+        images = [self.get_velo_image(idx) for idx in range(start_index, start_index + length)]
 
         data = []
         for combi in combinations:
@@ -164,25 +177,34 @@ class KittiRawData:
             velo_stop_ts = velo_timespamps[idx_1]
 
             mask = ((self.timestamps_imu >= velo_start_ts) & (self.timestamps_imu < velo_stop_ts))
-            indices = np.argwhere(mask).flatten();
+            indices = np.argwhere(mask).flatten()
             #indices = range(self.imu_get_counter, np.ceil(self.imu_get_counter + (self.IMU_LENGTH * (self.seq_size - 1))).astype(np.int))
             #self.imu_get_counter += np.ceil(self.IMU_LENGTH).astype(np.int)
 
-            if len(indices) == 0:
-                print("Warning: No imu data found for index {}, velo-timestamps: [{} - {}]".format(start_index, velo_start_ts, velo_stop_ts))
-                imu_values = [0.]
-                gt = [None]
-            else:
-                oxts = self._load_oxts_lazy(indices)
-                #otxs = [self.oxts[index] for index in indices]
-                imu_values = [[oxt.packet.ax, oxt.packet.ay, oxt.packet.az, oxt.packet.wx, oxt.packet.wy, oxt.packet.wz] for oxt in oxts]
-                gt = [otx.T_w_imu.flatten() for otx in oxts]
+            oxts = self._load_oxts_lazy(indices)
+            #otxs = [self.oxts[index] for index in indices]
+            imu_values = [[oxt.packet.ax, oxt.packet.ay, oxt.packet.az, oxt.packet.wx, oxt.packet.wy, oxt.packet.wz] for oxt in oxts]
+            gt = self.calc_gt_from_oxts(oxts)
+            # gt = [oxt.T_w_imu.flatten() for oxt in oxts]
 
-                # print("V: {} I:{}\n   {}   {} \n **********".format(velo_start_ts, imu_ts[0], velo_stop_ts, imu_ts[-1]))
+            # print("V: {} I:{}\n   {}   {} \n **********".format(velo_start_ts, imu_ts[0], velo_stop_ts, imu_ts[-1]))
 
             data_dict = {'images': [image_0, image_1], 'imu': imu_values, 'ground-truth': gt}
             data.append(data_dict)
         return data
+
+    def calc_gt_from_oxts(self, oxts):
+        transformations = [oxt.T_w_imu for oxt in oxts]
+
+        T_w0 = transformations[0]
+        R_w0 = T_w0[:3, :3]
+        t_w0 = T_w0[:3, 3]
+        T_w0_inv = np.identity(4)
+        T_w0_inv[:3, :3] = R_w0.T
+        T_w0_inv[:3, 3] = -np.matmul(R_w0.T, t_w0)
+
+        gt_s = [np.matmul(T_w0_inv, T_0i) for T_0i in transformations]
+        return gt_s
 
 
 class Kitti(data.Dataset):
@@ -266,7 +288,6 @@ class Kitti(data.Dataset):
         data = dataset.get_data(idx, self.seq_size)
         end = time.time()
         print("idx:{}, Delta-Time: {}".format(index, end - start))
-
         return data
 
 
@@ -295,6 +316,10 @@ if __name__ == "__main__":
 
     for i, datas in enumerate(dataloader):
         data = datas[0]
+
+        if len(data['ground-truth']) == 1 and data['ground-truth'][0] == 0:
+            continue
+
         img_0 = data['images'][0]
         img_1 = data['images'][1]
 
@@ -308,7 +333,8 @@ if __name__ == "__main__":
         indices = np.where(np.all(xyz_1 == [0., 0., 0.], axis=1))[0]
         xyz_1 = np.delete(xyz_1, indices, axis=0)
 
-        T_gt = data['ground-truth'][-1].numpy().reshape(4, 4)
+        T_gt_0 = data['ground-truth'][0].numpy().reshape(4, 4)
+        T_gt_1 = data['ground-truth'][-1].numpy().reshape(4, 4)
 
         pcd_0 = o3d.geometry.PointCloud()
         pcd_0.points = o3d.utility.Vector3dVector(xyz_0)
@@ -317,12 +343,10 @@ if __name__ == "__main__":
         pcd_1.points = o3d.utility.Vector3dVector(xyz_1)
 
         draw_registration_result(pcd_0, pcd_1, np.identity(4))
-        draw_registration_result(pcd_0, pcd_1, T_gt)
+        draw_registration_result(pcd_1, pcd_0, T_gt_1)
 
-        #
         # im1 = img1[0].numpy()
         # im2 = img2[0].numpy()
         #
         # plt.imshow(im1[:, :, 0])
         # plt.show()
-    print(dataset)

@@ -5,6 +5,8 @@ from collections import namedtuple
 import numpy as np
 from PIL import Image
 
+import open3d as o3d
+
 __author__ = "Lee Clement"
 __email__ = "lee.clement@robotics.utias.utoronto.ca"
 
@@ -116,7 +118,6 @@ def load_oxts_packets_and_poses(oxts_files):
     origin = None
 
     oxts = []
-
     for filename in oxts_files:
         with open(filename, 'r') as f:
             for line in f.readlines():
@@ -130,10 +131,11 @@ def load_oxts_packets_and_poses(oxts_files):
                 if scale is None:
                     scale = np.cos(packet.lat * np.pi / 180.)
 
-                R, t = pose_from_oxts_packet(packet, scale)
+                R, t = pose_from_oxts_packet(packet,  scale)
 
                 if origin is None:
                     origin = t
+
                 T_w_imu = transform_from_rot_trans(R, t - origin)
                 oxts.append(OxtsData(packet, T_w_imu))
     return oxts
@@ -177,5 +179,13 @@ def yield_velo_scans(velo_files):
         yield load_velo_scan(file)
 
 
-def kitti_pcl_to_2d_image(point_cloud):
-    pass
+def convert_cloud_numpy_to_o3d(pointcloud):
+    o3d_cloud = o3d.geometry.PointCloud()
+    o3d_cloud.points = o3d.utility.Vector3dVector(pointcloud[:, 0:3])
+
+    lendata, ndim = pointcloud.shape
+    if ndim > 3:
+        zeros = np.zeros((lendata, 2))
+        intensities = np.hstack((pointcloud[:, 3].reshape((lendata, 1)), zeros)) / 255.
+        o3d_cloud.colors = o3d.utility.Vector3dVector(intensities)
+    return o3d_cloud
