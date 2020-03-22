@@ -1,15 +1,14 @@
-sequence-size: 4
-
 datasets:
     kitti:
-      root-path: "/media/ajava/Dateien_ST/Arash/Datasets/KITTI/raw_unsync/"
-      image-width: 1024
+      root-path: "/media/ajava/Data/Datasets/KITTI/raw_unsync"
+      image-width: 1800
       image-height: 64
       fov-up: 3.
       fov-down: -25.
+      sequence-size: 3
       train:
-          "2011_10_03": ['27', '42']
-          "2011_09_30": ['27']
+          "2011_10_03": ['27']
+          #"2011_09_30": ['27']
       test:
           "2011_09_30": [1, 5]
           "2011_10_05": [10, 8, 45]

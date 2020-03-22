@@ -32,7 +32,8 @@ class Fire(nn.Module):
         x_3x3 = self.expand3x3(x)
         x_3x3 = self.expand3x3_activation(x_3x3)
 
-        return torch.cat([x_1x1, x_3x3], 1)
+        out = torch.cat([x_1x1, x_3x3], 1)
+        return out
 
 
 

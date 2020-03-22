@@ -189,3 +189,5 @@ def convert_cloud_numpy_to_o3d(pointcloud):
         intensities = np.hstack((pointcloud[:, 3].reshape((lendata, 1)), zeros)) / 255.
         o3d_cloud.colors = o3d.utility.Vector3dVector(intensities)
     return o3d_cloud
+
+
