@@ -10,7 +10,7 @@ import open3d as o3d
 
 class LaserScan:
     """Class that contains LaserScan with x,y,z,r"""
-    EXTENSIONS_SCAN = ['.bin', '.txt']
+    EXTENSIONS_SCAN = ['.bin', '.txt', '.npy']
 
     def __init__(self, project=False, H=64, W=1024, fov_up=3.0, fov_down=-25.0):
         self.project = project

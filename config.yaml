@@ -5,15 +5,20 @@ datasets:
       image-height: 64
       fov-up: 3.
       fov-down: -25.
-      sequence-size: 3
+      sequence-size: 2
       train:
-          "2011_10_03": ['27']
-          #"2011_09_30": ['27']
+          "2011_10_03": ['27', '34', '42']
+          "2011_09_30": ['28']
       test:
           "2011_09_30": [1, 5]
           "2011_10_05": [10, 8, 45]
       val:
         2011_09_10: [3]
+
+      mean: [0.1039217] # [-0.00045479, 0.00236455, -0.0070441, 0.21484476, 0.1039217, 0.10714443] # channesl: x=0, y=1, z=2, remissions=3, range(x,y,z)=4, depth(x,y)=5
+      std: [1] # [0.08312062, 0.06196196, 0.00728464, 0.17477078, 0.08713332, 0.09107883] # channesl: x=0, y=1, z=2, remissions=3, range(x,y,z)=4, depth(x,y)=5
+
+channels: [4] # channesl: x=0, y=1, z=2, remissions=3, range(x,y,z)=4, depth(x,y)=5
 
 
 

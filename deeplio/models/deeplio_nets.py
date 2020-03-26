@@ -60,33 +60,43 @@ class DeepLIOS3(nn.Module):
     """
     DeepLIO with Simple Siamese SqueezeNet
     """
-    def __init__(self, in_channels, p=0.):
+    def __init__(self, input_shape, p=0.):
         super(DeepLIOS3, self).__init__()
         self.p = p
 
+        c, h, w = input_shape # number of channels, width and height
         # Siamese sqeeuze feature extraction networks
-        self.feat_net1 = SqueezeNet(in_channels, p=p)
-        self.feat_net2 = SqueezeNet(in_channels, p=p)
+        self.feat_net1 = SqueezeNet(c, p=p)
+        self.feat_net2 = SqueezeNet(c, p=p)
 
         # Odometry network
         self.fire1 = Fire(2 * 512, 64, 256, 256)
         self.fire2 = Fire(512, 64, 256, 256)
         self.pool1 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 0), ceil_mode=True)
 
-        self.fire3 = Fire(512, 80, 384, 384)
-        self.fire4 = Fire(768, 80, 384, 384)
+        self.fire3 = Fire(512, 80, 256, 256)
+        self.fire4 = Fire(512, 80, 256, 256)
         self.pool2 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 0), ceil_mode=True)
 
-        self.fc1 = nn.Linear(2 * 384 * 17 * 14, 512)
+        self.fire5 = Fire(512, 80, 384, 384)
+        self.fire6 = Fire(768, 80, 384, 384)
+        self.pool3 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 0), ceil_mode=True)
+
+        self.fire7 = Fire(768, 80, 384, 384)
+        self.fire8 = Fire(768, 80, 384, 384)
+        self.pool4 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 0), ceil_mode=True)
+
+        self.fc1 = nn.Linear(768 * 5 * 3, 256)
+        self.fc2 = nn.Linear(256, 124)
 
         if self.p > 0:
             self.fropout = nn.Dropout2d(p=self.p)
 
-        self.fc_pos = nn.Linear(512, 3)
-        self.fc_ori = nn.Linear(512, 4)
+        self.fc_pos = nn.Linear(124, 3)
+        self.fc_ori = nn.Linear(124, 4)
 
     def forward(self, x):
-        images = x[0]
+        images = x
 
         imgs_0 = images[0]
         imgs_1 = images[1]
@@ -104,9 +114,21 @@ class DeepLIOS3(nn.Module):
         out = self.fire4(out)
         out = self.pool2(out)
 
+        out = self.fire5(out)
+        out = self.fire6(out)
+        out = self.pool3(out)
+
+        out = self.fire7(out)
+        out = self.fire8(out)
+        out = self.pool4(out)
+
         a, b, c, d = out.size()
         out = out.view(-1, b * c * d)
+
         out = self.fc1(out)
+        out = F.relu(out)
+
+        out = self.fc2(out)
         out = F.relu(out)
 
         pos = self.fc_pos(out)

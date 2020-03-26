@@ -156,6 +156,8 @@ def load_velo_scan(file):
     scan = None
     if '.bin' in file:
         scan = load_velo_scan_bin(file)
+    elif '.npy' in file:
+        scan = load_velo_scan_npy(file)
     elif '.txt' in file:
         scan = load_velo_scan_txt(file)
     return scan
@@ -165,6 +167,12 @@ def load_velo_scan_bin(file):
     """Load and parse a velodyne binary file."""
     scan = np.fromfile(file, dtype=np.float32)
     return scan.reshape((-1, 4))
+
+
+def load_velo_scan_npy(file):
+    """Load and parse a velodyne binary file."""
+    scan = np.load(file)
+    return scan
 
 
 def load_velo_scan_txt(file):

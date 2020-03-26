@@ -4,6 +4,8 @@ import glob
 import yaml
 import datetime as dt
 import random
+from threading import Thread
+import multiprocessing
 
 import time # for start stop calc
 
@@ -73,7 +75,7 @@ class KittiRawData:
             os.path.join(self.data_path, 'oxts', 'data', '*.txt')))
         self.velo_files = sorted(glob.glob(
             os.path.join(self.data_path, 'velodyne_points',
-                         'data', '*.txt')))
+                         'data', '*.*')))
 
         # Subselect the chosen range of frames, if any
         if self.frames is not None:
@@ -229,10 +231,12 @@ class Kitti(data.Dataset):
 
         self.ds_type = ds_type
         self.seq_size = ds_config['sequence-size']
+        self.channels = config['channels']
 
         self.dataset = []
         self.length_each_drive = []
         self.bins = []
+        self.images = [None] * self.seq_size
 
         # Since we are intrested in sequence of lidar frame - e.g. multiple frame at each iteration,
         # depending on the sequence size and the current wanted index coming from pytorch dataloader
@@ -246,7 +250,7 @@ class Kitti(data.Dataset):
                 length = len(ds)
 
                 bin_start = last_bin_end + 1
-                bin_end = bin_start + length - self.seq_size
+                bin_end = bin_start + length - 1
                 self.bins.append([bin_start, bin_end])
                 last_bin_end = bin_end
 
@@ -269,6 +273,29 @@ class Kitti(data.Dataset):
             length = self.length_each_drive[i]
             bins = self.bins[i]
             self.logger.info("Date: {}, Drive: {}, length: {}, bins: {}".format(date, drive, length, bins))
+
+    def load_images(self, dataset, indices):
+        threads = [None] * self.seq_size
+
+        for i in range(self.seq_size):
+            idx = indices[i]
+            img_name = self._buil_img_name(dataset, idx)
+            
+            threads[i] = Thread(target=self.load_image, args=(dataset, indices[i], i))
+            threads[i].start()
+
+        for i in range(self.seq_size):
+            threads[i].join()
+
+    def load_image(self, dataset, ds_index, img_index):
+        img = dataset.get_velo_image(ds_index)
+        img = img[:, :, self.channels]
+        img_name = self._buil_img_name(dataset, ds_index)
+        self.images[img_index] = img
+
+    def _buil_img_name(self, dataset, index):
+        img_name = "{}/{}".format(dataset.data_path, index)
+        return img_name
 
     def __len__(self):
         return self.length
@@ -293,75 +320,75 @@ class Kitti(data.Dataset):
 
         start = time.time()
         dataset = self.dataset[num_drive]
-        data = dataset.get_data(idx, self.seq_size)
+
+        # get frame indices
+        len_ds = len(dataset)
+        if idx <= len_ds - self.seq_size:
+            indices = list(range(idx, idx + self.seq_size))
+        elif (len_ds - self.seq_size) < idx < len_ds:
+            indices = list(range(len_ds - self.seq_size, len_ds))
+        else:
+            self.logger.error("Wrong index ({}) in {}_{}".format(idx, dataset.date, dataset.drive))
+            raise Exception("Wrong index ({}) in {}_{}".format(idx, dataset.date, dataset.drive))
+
+        # Get frame timestamps
+        velo_timespamps = [dataset.timestamps_velo[idx] for idx in indices]
+
+        # difference combination of a sequence length
+        # e.g. for sequence-length = 3, we have following combinations
+        # [0, 1], [0, 2], [1, 2]
+        combinations = [[x, y] for y in range(self.seq_size) for x in range(y)]
+        # we do not want that the network memorizes an specific combination pattern
+        random.shuffle(combinations)
+
+        for combi in combinations:
+            idx_0 = combi[0]
+            idx_1 = combi[1]
+
+            velo_start_ts = velo_timespamps[idx_0]
+            velo_stop_ts = velo_timespamps[idx_1]
+
+            mask = ((dataset.timestamps_imu >= velo_start_ts) & (dataset.timestamps_imu < velo_stop_ts))
+            idxs = np.argwhere(mask).flatten()
+            if len(idxs) == 0:
+                data = {'valid': False}
+                return data
+
+        self.load_images(dataset, indices)
+        images = self.images
+
+        images_0 = []
+        images_1 = []
+        imus = []
+        gt_s = []
+        for combi in combinations:
+            idx_0 = combi[0]
+            idx_1 = combi[1]
+
+            images_0.append(images[idx_0])
+            images_1.append(images[idx_1])
+
+            velo_start_ts = velo_timespamps[idx_0]
+            velo_stop_ts = velo_timespamps[idx_1]
+
+            mask = ((dataset.timestamps_imu >= velo_start_ts) & (dataset.timestamps_imu < velo_stop_ts))
+            indices = np.argwhere(mask).flatten()
+
+            oxts = dataset._load_oxts_lazy(indices)
+            imu_values = [[oxt.packet.ax, oxt.packet.ay, oxt.packet.az, oxt.packet.wx, oxt.packet.wy, oxt.packet.wz] for oxt in oxts]
+            imus.append(imu_values)
+
+            gt = dataset.calc_gt_from_oxts(oxts)
+            gt_s.append(gt)
+
+            # print("V: {} I:{}\n   {}   {} \n **********".format(velo_start_ts, imu_ts[0], velo_stop_ts, imu_ts[-1]))
+
+        data = {'images': [np.array(images_0), np.array(images_1)], 'imu': imus, 'ground-truth': gt_s,
+                'combinations': combinations, 'valid': True}
 
         if self.transform:
             data = self.transform(data)
 
         end = time.time()
-        print("idx:{}, Delta-Time: {}".format(index, end - start))
+        #print("idx:{}, Delta-Time: {}".format(index, end - start))
         return data
-
-
-if __name__ == "__main__":
-    from matplotlib import  pyplot as plt
-    import open3d as o3d
-    import copy
-    from torchvision import transforms
-    from deeplio.datasets import transfromers
-
-    def draw_registration_result(source, target, transformation):
-        source_temp = copy.deepcopy(source)
-        target_temp = copy.deepcopy(target)
-        source_temp.paint_uniform_color([1, 0.706, 0])
-        target_temp.paint_uniform_color([0, 0.651, 0.929])
-        source_temp.transform(transformation)
-        o3d.visualization.draw_geometries([source_temp, target_temp])
-
-    with open("../config.yaml") as f:
-        cfg = yaml.safe_load(f)
-
-    transform = transforms.Compose([transfromers.ToTensor()])
-
-    dataset = Kitti(config=cfg, transform=transform)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1)
-
-    #data = dataset.__getitem__(334)
-    #imu = data['imu']
-    #gt = data['ground-truth']
-
-    for i, data in enumerate(dataloader):
-
-        if len(data['ground-truth']) == 1 and data['ground-truth'][0] == 0:
-            continue
-
-        img_0 = data['images'][0][0][0]
-        img_1 = data['images'][1][0][0]
-
-        xyz_0 = img_0[:3, :, :].numpy()
-        xyz_0 = xyz_0.transpose(1, 2, 0).reshape(-1, 3) * KittiRawData.MAX_DIST_HDL64
-        indices = np.where(np.all(xyz_0 == [0., 0., 0.], axis=1))[0]
-        xyz_0 = np.delete(xyz_0, indices, axis=0)
-
-        xyz_1 = img_1[:3, :, :].numpy()
-        xyz_1 = xyz_1.transpose(1, 2, 0).reshape(-1, 3) * KittiRawData.MAX_DIST_HDL64
-        indices = np.where(np.all(xyz_1 == [0., 0., 0.], axis=1))[0]
-        xyz_1 = np.delete(xyz_1, indices, axis=0)
-
-        T_gt_0 = data['ground-truth'][0][0][0].numpy()
-        T_gt_1 = data['ground-truth'][0][0][-1].numpy()
-
-        pcd_0 = o3d.geometry.PointCloud()
-        pcd_0.points = o3d.utility.Vector3dVector(xyz_0)
-
-        pcd_1 = o3d.geometry.PointCloud()
-        pcd_1.points = o3d.utility.Vector3dVector(xyz_1)
-
-        draw_registration_result(pcd_0, pcd_1, np.identity(4))
-        draw_registration_result(pcd_1, pcd_0, T_gt_1)
-
-        # im1 = img1[0].numpy()
-        # im2 = img2[0].numpy()
-        #
-        # plt.imshow(im1[:, :, 0])
-        # plt.show()
