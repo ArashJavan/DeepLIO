@@ -5,7 +5,6 @@ import yaml
 import datetime as dt
 import random
 from threading import Thread
-import multiprocessing
 
 import time # for start stop calc
 
@@ -62,10 +61,11 @@ class KittiRawData:
         scan.do_range_projection()
         # collect projected data and adapt ranges
 
-        proj_xyz = scan.proj_xyz / self.MAX_DIST_HDL64
+        proj_xyz = scan.proj_xyz
         proj_remission = scan.proj_remission
-        proj_range = 1 / scan.proj_range
-        proj_range_xy = 1 / scan.proj_range_xy
+        proj_range = scan.proj_range
+        proj_range_xy = scan.proj_range_xy
+
         image = np.dstack((proj_xyz, proj_remission, proj_range, proj_range_xy))
         return image
 
@@ -136,72 +136,6 @@ class KittiRawData:
     def _load_oxts_lazy(self, indices):
         oxts = utils.load_oxts_packets_and_poses(self.oxts_files[indices])
         return oxts
-
-    def get_data(self, start_index, length):
-        """
-        Get a sequence of velodyne and imu data
-        :param start_index: start index
-        :param length: length of sequence
-        :return:
-        """
-        velo_timespamps = [self.timestamps_velo[idx] for idx in range(start_index, start_index + length)]
-
-        # difference combination of a sequence length
-        # e.g. for sequence-length = 3, we have following combinations
-        # [0, 1], [0, 2], [1, 2]
-        combinations = [[x, y] for y in range(length) for x in range(y)]
-        # we do not want that the network memorizes an specific combination pattern
-        random.shuffle(combinations)
-
-        for combi in combinations:
-            idx_0 = combi[0]
-            idx_1 = combi[1]
-
-            velo_start_ts = velo_timespamps[idx_0]
-            velo_stop_ts = velo_timespamps[idx_1]
-
-            mask = ((self.timestamps_imu >= velo_start_ts) & (self.timestamps_imu < velo_stop_ts))
-            indices = np.argwhere(mask).flatten()
-            if len(indices) == 0:
-                data_dict = {'images': [np.zeros((1, 1, 1, 1)), np.zeros((1, 1, 1, 1))], 'imu': [[0.]], 'ground-truth': [[0.]]}
-                return data_dict
-
-        images = [self.get_velo_image(idx) for idx in range(start_index, start_index + length)]
-
-        images_0 = []
-        images_1 = []
-        imus = []
-        gt_s = []
-        for combi in combinations:
-            idx_0 = combi[0]
-            idx_1 = combi[1]
-
-            images_0.append(images[idx_0])
-            images_1.append(images[idx_1])
-
-            #image_0 = images[idx_0]
-            #image_1 = images[idx_1]
-
-            velo_start_ts = velo_timespamps[idx_0]
-            velo_stop_ts = velo_timespamps[idx_1]
-
-            mask = ((self.timestamps_imu >= velo_start_ts) & (self.timestamps_imu < velo_stop_ts))
-            indices = np.argwhere(mask).flatten()
-            #indices = range(self.imu_get_counter, np.ceil(self.imu_get_counter + (self.IMU_LENGTH * (self.seq_size - 1))).astype(np.int))
-            #self.imu_get_counter += np.ceil(self.IMU_LENGTH).astype(np.int)
-
-            oxts = self._load_oxts_lazy(indices)
-            imu_values = [[oxt.packet.ax, oxt.packet.ay, oxt.packet.az, oxt.packet.wx, oxt.packet.wy, oxt.packet.wz] for oxt in oxts]
-            imus.append(imu_values)
-
-            gt = self.calc_gt_from_oxts(oxts)
-            gt_s.append(gt)
-            # gt = [oxt.T_w_imu.flatten() for oxt in oxts]
-
-            # print("V: {} I:{}\n   {}   {} \n **********".format(velo_start_ts, imu_ts[0], velo_stop_ts, imu_ts[-1]))
-
-        data_dict = {'images': [np.array(images_0), np.array(images_1)], 'imu': imus, 'ground-truth': gt_s, 'combinations': combinations}
-        return data_dict
 
     def calc_gt_from_oxts(self, oxts):
         transformations = [oxt.T_w_imu for oxt in oxts]

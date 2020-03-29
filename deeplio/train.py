@@ -30,11 +30,13 @@ def plot_images(images):
     fig.show()
 
 
-def train(model, train_loader, epoch):
+def train(model, train_loader, epoch, writer):
     model.train()
 
-    optimizer = optim.Adam(model.parameters())
-    criterion = simple_geo_const_loss
+    optimizer = optim.Adam(model.parameters(), lr=1e-5)
+    criterion = GeoConstLoss()
+
+    running_loss = 0.
     for batch_index, data in enumerate(train_loader):
 
         # skip unvalid data without ground-truth
@@ -42,13 +44,13 @@ def train(model, train_loader, epoch):
             continue
 
         images = [data['images'][0][0].to(device), data['images'][1][0].to(device)]
-        #plot_images(images)
+        # plot_images(images)
 
         gt = [data['ground-truth'][i][0][-1] for i in range(len(data['ground-truth']))]
         gt_pos = np.array([T[:3, 3].numpy() for T in gt])
         gt_rot =  np.array([matrix_to_quaternion(T[:3, :3]) for T in gt])
         gt = [torch.from_numpy(gt_pos).to(device), torch.from_numpy(gt_rot).to(device)]
-        # print(summary(model, torch.zeros(2, 3, 2, 64, 1800)))
+        #print(summary(model, torch.zeros(2, 3, 2, 64, 1800).to(device)))
         #print("combinations: {}".format(data['combinations']))
         outputs = model(images)
         loss = criterion(outputs, gt)
@@ -56,8 +58,11 @@ def train(model, train_loader, epoch):
         loss.backward()
         optimizer.step()
 
-        print("[{}] loss: {}".format(batch_index, loss.data))
+        running_loss += loss.item()
         if batch_index % 10 == 0:
+            writer.add_scalar("Loss/train", running_loss / 10, len(train_loader) + batch_index)
+            running_loss = 0.
+            print("loss: {}".format(loss.data))
             preds_ = [outputs[i].cpu().detach().numpy() for i in range(2)]
             gts_ = [gt[i].cpu().detach().numpy() for i in range(2)]
             print("{}\n{}\n{}\n{}".format(preds_[0], gts_[0], preds_[1], gts_[1]))
@@ -105,12 +110,12 @@ if __name__ == '__main__':
     train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=1)
 
     channels = len(cfg['channels'])
-    model = deeplio_nets.DeepLIOS3(input_shape=(channels, None, None), p=0)
+    model = deeplio_nets.DeepLIOS0(input_shape=(channels, None, None), p=0)
     model.to(device)
 
     for epoch in range(0, 1):
         print('-------------------------------------------------------------------')
-        train(model, train_dataloader, epoch)
+        train(model, train_dataloader, epoch, writer)
         print('-------------------------------------------------------------------')
         print()
 

@@ -26,18 +26,18 @@ class LaserScan:
         self.remissions = np.zeros((0, 1), dtype=np.float32)    # [m ,1]: remission
 
         # projected range image - [H,W] range (-1 is no data)
-        self.proj_range = np.full((self.proj_H, self.proj_W), 1e6,
+        self.proj_range = np.full((self.proj_H, self.proj_W), 0,
                                   dtype=np.float32)
 
         # projected range image xy-axis - [H,W] range (-1 is no data)
-        self.proj_range_xy = np.full((self.proj_H, self.proj_W), 1e6,
+        self.proj_range_xy = np.full((self.proj_H, self.proj_W), 0,
                                      dtype=np.float32)
 
         # unprojected range (list of depths for each point)
         self.unproj_range = np.zeros((0, 1), dtype=np.float32)
 
         # projected point cloud xyz - [H,W,3] xyz coord (-1 is no data)
-        self.proj_xyz = np.full((self.proj_H, self.proj_W, 3), 0.,
+        self.proj_xyz = np.full((self.proj_H, self.proj_W, 3), 0,
                                 dtype=np.float32)
 
         # projected remission - [H,W] intensity (-1 is no data)
@@ -46,7 +46,7 @@ class LaserScan:
 
         # projected index (for each pixel, what I am in the pointcloud)
         # [H,W] index (-1 is no data)
-        self.proj_idx = np.full((self.proj_H, self.proj_W), -1,
+        self.proj_idx = np.full((self.proj_H, self.proj_W), 0,
                                 dtype=np.int32)
 
         # for each point, where it is in the range image

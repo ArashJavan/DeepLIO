@@ -1,16 +1,17 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
-def simple_geo_const_loss(predictions, ground_truth):
-    pred_pos = predictions[0]
-    pred_ori = predictions[1]
-    pred_ori = (pred_ori.T / torch.norm(pred_ori, dim=1)).T
+class GeoConstLoss(nn.Module):
+    def __init__(self):
+        super(GeoConstLoss, self).__init__()
+        self.loss_fn = nn.MSELoss()
 
-    gt_pos = ground_truth[0]
-    gt_ori = ground_truth[1]
+    def forward(self, pred, gt):
+        x = pred[0]
+        x_gt = gt[0]
 
-    loss_pos = torch.mean(torch.norm(pred_pos - gt_pos))
-    loss_ori = torch.mean(torch.norm(pred_ori - gt_ori))
-    loss = loss_pos + loss_ori
-    return loss
+        loss = self.loss_fn(x, x_gt)
+        return loss
 
