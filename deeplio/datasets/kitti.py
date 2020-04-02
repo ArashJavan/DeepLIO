@@ -273,7 +273,7 @@ class Kitti(data.Dataset):
         # [0, 1], [0, 2], [1, 2]
         combinations = [[x, y] for y in range(self.seq_size) for x in range(y)]
         # we do not want that the network memorizes an specific combination pattern
-        random.shuffle(combinations)
+        # random.shuffle(combinations)
 
         for combi in combinations:
             idx_0 = combi[0]

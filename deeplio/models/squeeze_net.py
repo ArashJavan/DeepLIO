@@ -35,6 +35,57 @@ class Fire(nn.Module):
         return out
 
 
+class SqueezeNet(nn.Module):
+    """
+    SqeeuzeSeq architecture
+    """
+    def __init__(self, in_channels, p=0.):
+        super(SqueezeNet, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels=64, kernel_size=3, stride=(1, 2), padding=1)
+        self.pool1 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 0), ceil_mode=True)
+
+        self.fire2 = Fire(64, squeeze_planes=16, expand1x1_planes=64, expand3x3_planes=64)
+        self.fire3 = Fire(128, 16, 64, 64)
+        self.pool2 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 0), ceil_mode=True)
+
+        self.fire4 = Fire(128, 32, 128, 128)
+        self.fire5 = Fire(256, 32, 128, 128)
+        self.pool3 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 0), ceil_mode=True)
+
+        self.fire6 = Fire(256, 48, 192, 192)
+        self.fire7 = Fire(384, 48, 192, 192)
+        self.fire8 = Fire(384, 64, 256, 256)
+        self.fire9 = Fire(512, 64, 256, 256)
+        self.pool4 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 0), ceil_mode=True)
+
+        self.p = p
+        if p > 0:
+            self.dropout = nn.Dropout2d(p=p)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.pool1(x)
+        x = F.relu(x)
+
+        x = self.fire2(x)
+        x = self.fire3(x)
+        x = self.pool2(x)
+
+        x = self.fire4(x)
+        x = self.fire5(x)
+        x = self.pool3(x)
+
+        x = self.fire6(x)
+        x = self.fire7(x)
+        x = self.fire8(x)
+        x = self.fire9(x)
+        x = self.pool4(x)
+
+        if self.p > 0:
+            x = self.dropout(x)
+        return x
+
+
 
 
 

@@ -28,7 +28,7 @@ def convert(args):
         p.start()
 
         if i % 15 == 0:
-            time.sleep(1)
+            time.sleep(0.5)
 
     for process in processes:
         process.join()
