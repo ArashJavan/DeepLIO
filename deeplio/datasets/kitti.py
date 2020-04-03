@@ -152,6 +152,12 @@ class KittiRawData:
 
 
 class Kitti(data.Dataset):
+    # In unsynced KITTI raw dataset are some timestamp holes - i.g. 2011_10_03_27
+    # e.g. there is no corresponding IMU/GPS measurment to some velodyne frames,
+    # We set the min. no. so we can check and ignore these holes.
+    MIN_NUM_OXT_SAMPLES = 8
+    MAX_NUM_OXT_SAMPLES = 10
+
     def __init__(self, config, ds_type='train', transform=None):
         """
         :param root_path:
@@ -225,7 +231,7 @@ class Kitti(data.Dataset):
         img = dataset.get_velo_image(ds_index)
         img = img[:, :, self.channels]
         img_name = self._buil_img_name(dataset, ds_index)
-        self.images[img_index] = img
+        self.images[img_index] = torch.from_numpy(img)
 
     def _buil_img_name(self, dataset, index):
         img_name = "{}/{}".format(dataset.data_path, index)
@@ -237,6 +243,8 @@ class Kitti(data.Dataset):
     def __getitem__(self, index):
         if torch.is_tensor(index):
             index = index.tolist()
+
+        start = time.time()
 
         idx = -1
         num_drive = -1
@@ -252,7 +260,6 @@ class Kitti(data.Dataset):
             print("Error: No bins and no drive number found!")
             return None
 
-        start = time.time()
         dataset = self.dataset[num_drive]
 
         # get frame indices
@@ -268,61 +275,52 @@ class Kitti(data.Dataset):
         # Get frame timestamps
         velo_timespamps = [dataset.timestamps_velo[idx] for idx in indices]
 
-        # difference combination of a sequence length
-        # e.g. for sequence-length = 3, we have following combinations
-        # [0, 1], [0, 2], [1, 2]
-        combinations = [[x, y] for y in range(self.seq_size) for x in range(y)]
-        # we do not want that the network memorizes an specific combination pattern
-        # random.shuffle(combinations)
-
-        for combi in combinations:
-            idx_0 = combi[0]
-            idx_1 = combi[1]
-
-            velo_start_ts = velo_timespamps[idx_0]
-            velo_stop_ts = velo_timespamps[idx_1]
-
-            mask = ((dataset.timestamps_imu >= velo_start_ts) & (dataset.timestamps_imu < velo_stop_ts))
-            idxs = np.argwhere(mask).flatten()
-            if len(idxs) == 0:
-                data = {'valid': False}
-                return data
-
         self.load_images(dataset, indices)
         images = self.images
 
-        images_0 = []
-        images_1 = []
         imus = []
-        gt_s = []
-        for combi in combinations:
-            idx_0 = combi[0]
-            idx_1 = combi[1]
-
-            images_0.append(images[idx_0])
-            images_1.append(images[idx_1])
-
-            velo_start_ts = velo_timespamps[idx_0]
-            velo_stop_ts = velo_timespamps[idx_1]
+        gts = []
+        for i in range(self.seq_size - 1):
+            velo_start_ts = velo_timespamps[i]
+            velo_stop_ts = velo_timespamps[i+1]
 
             mask = ((dataset.timestamps_imu >= velo_start_ts) & (dataset.timestamps_imu < velo_stop_ts))
-            indices = np.argwhere(mask).flatten()
+            oxt_indices = np.argwhere(mask).flatten()
+            len_oxt = len(oxt_indices)
+            if (len_oxt== 0) or (len_oxt < self.MIN_NUM_OXT_SAMPLES):
+                self.logger.warning("Not enough OXT-samples: Index: {}, DS: {}_{}, len:{}, velo-timestamps: {}-{}".format(index, dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
+                tmp_imu = np.zeros((self.seq_size - 1, self.MAX_NUM_OXT_SAMPLES, 6))
+                tmp_gt = np.zeros((self.seq_size - 1, self.MAX_NUM_OXT_SAMPLES, 4, 4))
+                items = [images, tmp_imu, tmp_gt]
+                if self.transform:
+                    items = self.transform(items)
+                data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': False}
+                return data
+            else:
+                oxts = dataset._load_oxts_lazy(oxt_indices)
+                imu_values = np.array([[oxt.packet.ax, oxt.packet.ay, oxt.packet.az, oxt.packet.wx, oxt.packet.wy, oxt.packet.wz] for oxt in oxts])
+                gt = np.array(dataset.calc_gt_from_oxts(oxts))
 
-            oxts = dataset._load_oxts_lazy(indices)
-            imu_values = [[oxt.packet.ax, oxt.packet.ay, oxt.packet.az, oxt.packet.wx, oxt.packet.wy, oxt.packet.wz] for oxt in oxts]
-            imus.append(imu_values)
+                if len_oxt > self.MAX_NUM_OXT_SAMPLES:
+                    imu_values = imu_values[:self.MAX_NUM_OXT_SAMPLES]
+                    gt = gt[:self.MAX_NUM_OXT_SAMPLES]
+                    #self.logger.info("Cutting OXT-Samples: Index: {}, length:{},  velo-timestamps: {}-{})".format(index, len_oxt, velo_start_ts, velo_stop_ts))
+                elif len_oxt < self.MAX_NUM_OXT_SAMPLES:
+                    imu_values = np.pad(imu_values, ((0, self.MAX_NUM_OXT_SAMPLES - len_oxt), (0, 0)), constant_values=0.)
+                    gt = np.pad(gt, ((0, self.MAX_NUM_OXT_SAMPLES - len_oxt), (0, 0), (0, 0)), mode='edge')
+                    #self.logger.info("Padding OXT-Samples: Index: {}, length:{},  velo-timestamps: {}-{}".format(index, len_oxt, velo_start_ts, velo_stop_ts))
 
-            gt = dataset.calc_gt_from_oxts(oxts)
-            gt_s.append(gt)
+                imus.append(imu_values)
+                gts.append(gt)
 
-            # print("V: {} I:{}\n   {}   {} \n **********".format(velo_start_ts, imu_ts[0], velo_stop_ts, imu_ts[-1]))
-
-        data = {'images': [np.array(images_0), np.array(images_1)], 'imu': imus, 'ground-truth': gt_s,
-                'combinations': combinations, 'valid': True}
+        items = [images, imus, gts]
 
         if self.transform:
-            data = self.transform(data)
+             items = self.transform(items)
+
+        data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': True}
 
         end = time.time()
         #print("idx:{}, Delta-Time: {}".format(index, end - start))
+
         return data

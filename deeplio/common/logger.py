@@ -45,3 +45,6 @@ class PyLogger(object):
 
     def debug(self, msg, *args, **kwargs):
         self.logger.debug(msg, *args)
+
+    def warning(self, msg, *args, **kwargs):
+        self.logger.warning(msg, *args)
