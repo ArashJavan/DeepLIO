@@ -23,17 +23,12 @@ from deeplio.datasets import KittiRawData
 CHANNEL_NAMES = ['x', 'y', 'z', 'remission', 'rang', 'depth']
 PIVOT = 200
 
-lock = Lock()
-
 
 def run_job(args):
-    def fetch_images(i):
-        pass
+    bar_pos = args[0]
+    dataset = args[1]
 
-    pos = args[0]
-    ds = args[1]
-
-    length = len(ds)
+    length = len(dataset)
     num_channels = len(CHANNEL_NAMES)
 
     pixel_num = 0
@@ -43,8 +38,8 @@ def run_job(args):
 
     counter = 0
 
-    for i in tqdm.trange(length, desc=ds.data_path, position=pos):
-        im = ds.get_velo_image(i)
+    for i in tqdm.trange(length, desc=dataset.data_path, position=bar_pos):
+        im = dataset.get_velo_image(i)
         im_channels = im.reshape(-1, 6).T
         pixel_num += (im.size / num_channels)
         channel_sum += np.sum(im_channels, axis=1)
@@ -81,8 +76,6 @@ def main(args):
     channel_sum = np.zeros(num_channels)
     channel_sum_squared = np.zeros(num_channels)
 
-    counter = 0
-    pivot = 200
     channel_hist = [[] for i in range(num_channels)]
 
     datasets = [KittiRawData(root_path, str(date), str(drive), ds_config) for date, drives in ds_config[ds_type].items()
@@ -118,7 +111,7 @@ def main(args):
                                                                                           channel_mean[j],
                                                                                           channel_std[j]))
         fig.tight_layout()
-        fig.savefig("../histogram_mean_and_std_old.png")
+        fig.savefig("../histogram_mean_and_std.png")
 
     with open("../mean_and_std.txt", 'w') as f:
         f.write("mean: {}\nstd: {}".format(channel_mean, channel_std))

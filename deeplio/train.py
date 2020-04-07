@@ -17,8 +17,6 @@ from deeplio.visualization.utilities import *
 
 from pytorch_model_summary import summary
 
-import matplotlib.pyplot as plt
-
 def plot_images(images):
     img1, img2 = images[0], images[1]
     fig, ax = plt.subplots(3, 2)
@@ -49,8 +47,7 @@ class PostProcessSiameseData(object):
 
             combinations = [[x, y] for y in range(self.seq_size) for x in range(y)]
             # we do not want that the network memorizes an specific combination pattern
-            # random.shuffle(combinations)
-            random.shuffle(combinations)
+            #random.shuffle(combinations)
 
             T_gt = self.calc_trans_mat_combis(gts, combinations)
             res_gt.extend(T_gt)
@@ -113,7 +110,7 @@ class Trainer:
         transform = transforms.Compose([transfromers.ToTensor(),
                                         transfromers.Normalize(mean=mean, std=std)])
         dataset = kitti.Kitti(config=cfg, transform=transform)
-        self.train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=2)
+        self.train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size)
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size)
 
         self.tensor_writer = tensorboard.SummaryWriter()
@@ -125,7 +122,7 @@ class Trainer:
         self.model = deeplio_nets.DeepLIOS0(input_shape=(channels, None, None), p=0)
         self.model.to(self.device)
 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-3)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-6)
         self.criterion = GeoConstLoss()
 
     def train(self):
@@ -139,7 +136,7 @@ class Trainer:
             running_loss = 0.
             for idx, data in enumerate(self.train_dataloader):
 
-                # skip unvalid data without ground-truth
+                # skip invalid data without ground-truth
                 if not torch.all(data['valid']):
                     continue
 
@@ -158,7 +155,7 @@ class Trainer:
                 gt_rot = rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
                 gts = [gt_pos, gt_rot]
 
-                loss = 10 * criterion(preds, gts)
+                loss = criterion(preds, gts)
 
                 loss.backward()
                 optimizer.step()
@@ -190,68 +187,6 @@ class Trainer:
                     preds_ = [preds[i].cpu().detach().numpy() for i in range(2)]
                     gts_ = [gts[i].cpu().detach().numpy() for i in range(2)]
                     print("{}\n{}".format(preds_[0], gts_[0]))
-
-
-def train(model, train_loader, epoch, writer):
-    model.train()
-
-
-
-    running_loss = 0.
-    for idx, data in enumerate(train_loader):
-
-        # skip unvalid data without ground-truth
-        if not torch.all(data['valid']):
-            continue
-
-        imgs_0 = data['images'][0][0]
-        imgs_1 = data['images'][1][0]
-        images = [imgs_0.to(device), imgs_1.to(device)]
-        # plot_images(images)
-
-        gt = [data['ground-truth'][i][0][-1] for i in range(len(data['ground-truth']))]
-        gt_pos = np.array([T[:3, 3].numpy() for T in gt])
-        gt_rot =  np.array([matrix_to_quaternion(T[:3, :3]) for T in gt])
-        gt = [torch.from_numpy(gt_pos).to(device), torch.from_numpy(gt_rot).to(device)]
-        #print(summary(model, torch.zeros(2, 3, 2, 64, 1024).to(device)))
-        #print("combinations: {}".format(data['combinations']))
-
-        # zero the parameter gradients
-        optimizer.zero_grad()
-
-        outputs = model(images)
-        loss = criterion(outputs, gt)
-
-        loss.backward()
-        optimizer.step()
-
-        running_loss += loss.item()
-        if idx % 10 == 0:
-            writer.add_scalar("Loss/train", running_loss / 10, len(train_loader) + idx)
-            running_loss = 0.
-
-            comb = data['combinations'][0].numpy()
-            len_seq = len(np.unique(comb))
-            images = []
-            n_channels = len(cfg['channels'])
-            ims = [imgs_0, imgs_1]
-            for u in range(len_seq):
-                for v in range(len(comb)):
-                    if u == comb[v, 0]:
-                        images.append(ims[0][v])
-                        break
-                    elif u == comb[v, 1]:
-                        images.append(ims[1][v])
-                        break
-            images = torch.stack(images)
-            n, c, h, w = images.shape
-            #for ch in range(n_channels):
-            #    writer.add_image("Images/Channel-{}".format(u), images[:, u, :, :].reshape(n, 1, h, w), dataformats='NCHW')
-
-            print("[{}] loss: {}".format(idx, loss.data))
-            preds_ = [outputs[i].cpu().detach().numpy() for i in range(2)]
-            gts_ = [gt[i].cpu().detach().numpy() for i in range(2)]
-            print("{}\n{}".format(preds_[0], gts_[0]))
 
 
 if __name__ == '__main__':

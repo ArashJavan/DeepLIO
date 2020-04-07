@@ -36,6 +36,9 @@ class KittiRawData:
         self.fov_up = cfg['fov-up']
         self.fov_down = cfg['fov-down']
         self.seq_size = cfg['sequence-size']
+        self.max_depth = cfg['max-depth']
+        self.min_depth = cfg['min-depth']
+        self.inv_depth = cfg['inverse-depth']
 
         # Find all the data files
         self._get_file_lists()
@@ -56,7 +59,8 @@ class KittiRawData:
         return utils.load_velo_scan(self.velo_files[idx])
 
     def get_velo_image(self, idx):
-        scan = LaserScan(H=self.image_height, W=self.image_width, fov_up=self.fov_up, fov_down=self.fov_down)
+        scan = LaserScan(H=self.image_height, W=self.image_width, fov_up=self.fov_up, fov_down=self.fov_down,
+                         min_depth=self.min_depth, max_depth=self.max_depth, inverse_depth=self.inv_depth)
         scan.open_scan(self.velo_files[idx])
         scan.do_range_projection()
         # collect projected data and adapt ranges
@@ -219,8 +223,7 @@ class Kitti(data.Dataset):
 
         for i in range(self.seq_size):
             idx = indices[i]
-            img_name = self._buil_img_name(dataset, idx)
-            
+
             threads[i] = Thread(target=self.load_image, args=(dataset, indices[i], i))
             threads[i].start()
 
@@ -230,12 +233,7 @@ class Kitti(data.Dataset):
     def load_image(self, dataset, ds_index, img_index):
         img = dataset.get_velo_image(ds_index)
         img = img[:, :, self.channels]
-        img_name = self._buil_img_name(dataset, ds_index)
         self.images[img_index] = torch.from_numpy(img)
-
-    def _buil_img_name(self, dataset, index):
-        img_name = "{}/{}".format(dataset.data_path, index)
-        return img_name
 
     def __len__(self):
         return self.length

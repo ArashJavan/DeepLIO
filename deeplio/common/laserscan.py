@@ -12,12 +12,16 @@ class LaserScan:
     """Class that contains LaserScan with x,y,z,r"""
     EXTENSIONS_SCAN = ['.bin', '.txt', '.npy']
 
-    def __init__(self, project=False, H=64, W=1024, fov_up=3.0, fov_down=-25.0):
+    def __init__(self, project=False, H=64, W=1024, fov_up=3.0, fov_down=-25.0,
+                 max_depth=80, min_depth=2.,inverse_depth=True):
         self.project = project
         self.proj_H = H
         self.proj_W = W
         self.proj_fov_up = fov_up
         self.proj_fov_down = fov_down
+        self.max_depth = max_depth
+        self.min_depth = min_depth
+        self.inv_depth = inverse_depth
         self.reset()
 
     def reset(self):
@@ -26,12 +30,9 @@ class LaserScan:
         self.remissions = np.zeros((0, 1), dtype=np.float32)    # [m ,1]: remission
 
         # projected range image - [H,W] range (-1 is no data)
-        self.proj_range = np.full((self.proj_H, self.proj_W), 0,
-                                  dtype=np.float32)
+        self.proj_range = np.full((self.proj_H, self.proj_W), 0., dtype=np.float32)
 
-        # projected range image xy-axis - [H,W] range (-1 is no data)
-        self.proj_range_xy = np.full((self.proj_H, self.proj_W), 0,
-                                     dtype=np.float32)
+        self.proj_range_xy = np.full((self.proj_H, self.proj_W), 0., dtype=np.float32)
 
         # unprojected range (list of depths for each point)
         self.unproj_range = np.zeros((0, 1), dtype=np.float32)
@@ -81,6 +82,12 @@ class LaserScan:
 
         # if all goes well, open pointcloud
         scan = utils.load_velo_scan(filename)
+        depth = np.linalg.norm(scan[:, 0:3], 2, axis=1)
+
+        max_idx = np.argwhere(depth > self.max_depth)
+        min_idx = np.argwhere(depth < self.min_depth)
+        idx = np.vstack((min_idx, max_idx))
+        scan = np.delete(scan, idx, axis=0)
 
         # put in attribute
         points = scan[:, 0:3]    # get xyz
@@ -170,8 +177,17 @@ class LaserScan:
         proj_x = proj_x[order]
 
         # assing to images
+        # normalizing depth
+        if self.inv_depth:
+            depth = (depth - self.min_depth) / (self.max_depth - self.min_depth)
+            depth_xy = (depth_xy - self.min_depth) / (self.max_depth - self.min_depth)
+
+            depth = 1 - depth
+            depth_xy = 1 - depth_xy
+
         self.proj_range[proj_y, proj_x] = depth
         self.proj_range_xy[proj_y, proj_x] = depth_xy
+
         self.proj_xyz[proj_y, proj_x] = points
         self.proj_remission[proj_y, proj_x] = remission
         self.proj_idx[proj_y, proj_x] = indices

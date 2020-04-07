@@ -6,7 +6,7 @@ import torch.nn.functional as F
 class GeoConstLoss(nn.Module):
     def __init__(self):
         super(GeoConstLoss, self).__init__()
-        self.loss_fn = nn.MSELoss()
+        self.loss_fn = nn.MSELoss(reduction='sum')
 
     def forward(self, pred, gt):
         x = pred[0]

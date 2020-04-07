@@ -1,11 +1,6 @@
 import copy
 import numpy as np
 
-import matplotlib
-import matplotlib.pyplot as plt
-
-import torch
-
 import open3d as o3d
 
 from deeplio.datasets.kitti import KittiRawData

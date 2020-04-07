@@ -6,6 +6,9 @@ datasets:
       fov-up: 3.
       fov-down: -25.
       sequence-size: 3
+      max-depth: 80.
+      min-depth: 2.
+      inverse-depth: true
       train:
           "2011_10_03": ['27', '42', '34']
           "2011_09_30": ['16', '18', '20', '27']
@@ -14,10 +17,11 @@ datasets:
       val:
           "2011_09_30": ['28']
 
-      mean: [0.16986037, 9.35411262] # channesl: x=0, y=1, z=2, remissions=3, range(x,y,z)=4, depth(x,y)=5
-      std: [0.16218275, 12.43905065] # channesl: x=0, y=1, z=2, remissions=3, range(x,y,z)=4, depth(x,y)=5
+      mean: [0.2163, 0.6695] # channesl: x=0, y=1, z=2, remissions=3, range(x,y,z)=4, depth(x,y)=5
+      std: [0.174, 0.3948] # channesl: x=0, y=1, z=2, remissions=3, range(x,y,z)=4, depth(x,y)=5
 
-batch-size: 2
+batch-size: 3
 epoch: 2
+
 current-dataset: 'kitti'
-channels: [3, 5] # channesl: x=0, y=1, z=2, remissions=3, range(x,y,z)=4, depth(x,y)=5
+channels: [3, 4] # channesl: x=0, y=1, z=2, remissions=3, range(x,y,z)=4, depth(x,y)=5

@@ -97,7 +97,7 @@ class DeepLIOS0(nn.Module):
         # Siamese sqeeuze feature extraction networks
 
         self.net_0 = self.create_inner_net(channels=c)
-        self.net_1 = self.create_inner_net(channels=c)
+        #self.net_1 = self.create_inner_net(channels=c)
         #self.forward_simese = self.create_inner_net(channels=c)
 
         self.fc1 = nn.Linear(2*245888, 128)
@@ -139,7 +139,7 @@ class DeepLIOS0(nn.Module):
         imgs_1 = images[1]
 
         out_0 = self.net_0(imgs_0)
-        out_1 = self.net_1(imgs_1)
+        out_1 = self.net_0(imgs_1)
 
         #out_0 = self.forward_simese(imgs_0)
         #out_1 = self.forward_simese(imgs_1)
@@ -154,7 +154,7 @@ class DeepLIOS0(nn.Module):
         out = self.fc3(out)
 
         pos = self.fc_pos(out)
-        ori = torch.zeros((1, 3)) #self.fc_ori(out)
+        ori = torch.zeros((1, 3), requires_grad=False) #self.fc_ori(out)
         return [pos, ori]
 
 

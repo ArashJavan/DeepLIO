@@ -199,3 +199,16 @@ def convert_cloud_numpy_to_o3d(pointcloud):
     return o3d_cloud
 
 
+def convert_velo_img_to_pcl(img):
+    xyz = img[:, :, :3]
+    xyz = xyz.reshape(-1, 3)
+    indices = np.where(np.all(xyz == [0., 0., 0.], axis=1))[0]
+    xyz = np.delete(xyz, indices, axis=0)
+    return xyz
+
+
+def convert_velo_img_to_o3d(img):
+    xyz = convert_velo_img_to_pcl(img)
+    pcd = convert_cloud_numpy_to_o3d(xyz)
+    return pcd
+
