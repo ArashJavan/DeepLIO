@@ -9,90 +9,14 @@ from torch import optim
 from torch.utils import tensorboard
 
 from deeplio.datasets import kitti
-from deeplio.models import deeplio_nets
 from deeplio.datasets import transfromers
+from deeplio.models import deeplio_nets as net
+from deeplio.models.misc import *
 from deeplio.losses.losses import *
 from deeplio.common.spatial import *
 from deeplio.visualization.utilities import *
 
 from pytorch_model_summary import summary
-
-def plot_images(images):
-    img1, img2 = images[0], images[1]
-    fig, ax = plt.subplots(3, 2)
-    for i in range(1):
-        for j in range(2):
-            ax[i, j].imshow(images[j][i][0, :, :].cpu().numpy())
-    fig.show()
-
-
-class PostProcessSiameseData(object):
-    def __init__(self, seq_size=2, batch_size=1):
-        self.seq_size = seq_size
-        self.batch_size = batch_size
-
-    def process(self, data):
-        images = data['images']
-        oxts = [data['imus'],data['gts']]
-
-        res_im_0 = []
-        res_im_1 = []
-        res_imu = []
-        res_gt = []
-
-        for i in range(self.batch_size):
-            imgs = images[i]
-            imus = oxts[0][i]
-            gts = oxts[1][i]
-
-            combinations = [[0, x] for x in range(self.seq_size) if x > 0]
-            # we do not want that the network memorizes an specific combination pattern
-            random.shuffle(combinations)
-
-            T_gt = self.calc_trans_mat_combis(gts, combinations)
-            res_gt.extend(T_gt)
-
-            for j, combi in enumerate(combinations):
-                idx_0 = combi[0]
-                idx_1 = combi[1]
-
-                res_im_0.append(imgs[idx_0])
-                res_im_1.append(imgs[idx_1])
-
-                # Determining IMU measurment btw. each combination
-                max_idx = max(combi)
-                min_idx = min(combi)
-                imu_tmp = []
-                for k in range(min_idx, max_idx):
-                    imu_tmp.extend(imus[k])
-                res_imu.append(imu_tmp)
-
-        res_im_0 = torch.stack(res_im_0)
-        res_im_1 = torch.stack(res_im_1)
-        res_gt = torch.stack(res_gt)
-        res_imu = [torch.stack(imu) for imu in res_imu]
-        return res_im_0, res_im_1, res_gt, res_imu
-
-    def calc_trans_mat_combis(self, transformations, combinations):
-        T_local = []
-        for i in range(self.seq_size):
-            if i == 0:
-                T_local.append(transformations[i, 0])
-            else:
-                T_local.append(transformations[i-1, -1])
-        T = []
-        for combi in combinations:
-            max_idx = max(combi)
-            min_idx = min(combi)
-            T_tmp = T_local[min_idx + 1]
-            for i in range(min_idx + 1, max_idx):
-                T_i = T_local[i]
-                T_tmp = torch.matmul(T_tmp, T_i)
-            T.append(T_tmp)
-        return T
-
-    def __call__(self, args):
-        return self.process(args)
 
 
 class Trainer:
@@ -119,7 +43,7 @@ class Trainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         channels = len(self.cfg['channels'])
-        self.model = deeplio_nets.DeepLIOS0(input_shape=(channels, None, None), p=0)
+        self.model = net.DeepLIOS0(input_shape=(channels, None, None), p=0)
         self.model.to(self.device)
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=1e-6)
