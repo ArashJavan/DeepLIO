@@ -27,8 +27,10 @@ class KittiRawData:
     def __init__(self, base_path, date, drive, cfg, **kwargs):
         self.drive = drive
         self.date = date
+        self.dataset = kwargs.get('dataset', 'extract')
+        self.drive_full = date + '_drive_' + drive + '_' + self.dataset
         self.calib_path = os.path.join(base_path, date)
-        self.data_path = os.path.join(base_path, date, drive)
+        self.data_path = os.path.join(base_path, date, self.drive_full)
         self.frames = kwargs.get('frames', None)
 
         self.image_width = cfg['image-width']
@@ -189,7 +191,9 @@ class Kitti(data.Dataset):
         last_bin_end = -1
         for date, drives in ds_config[self.ds_type].items():
             for drive in drives:
-                ds = KittiRawData(root_path, str(date), str(drive), ds_config)
+                date = str(date).replace('-', '_')
+                drive = '{0:04d}'.format(drive)
+                ds = KittiRawData(root_path, date, drive, ds_config)
 
                 length = len(ds)
 

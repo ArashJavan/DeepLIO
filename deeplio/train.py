@@ -45,9 +45,9 @@ class PostProcessSiameseData(object):
             imus = oxts[0][i]
             gts = oxts[1][i]
 
-            combinations = [[x, y] for y in range(self.seq_size) for x in range(y)]
+            combinations = [[0, x] for x in range(self.seq_size) if x > 0]
             # we do not want that the network memorizes an specific combination pattern
-            #random.shuffle(combinations)
+            random.shuffle(combinations)
 
             T_gt = self.calc_trans_mat_combis(gts, combinations)
             res_gt.extend(T_gt)
@@ -164,25 +164,6 @@ class Trainer:
                 if idx % 10 == 0:
                     writer.add_scalar("Loss/train", running_loss / 10, len(self.train_dataloader) + idx)
                     running_loss = 0.
-
-                    # comb = data['combinations'][0].numpy()
-                    # len_seq = len(np.unique(comb))
-                    # images = []
-                    # n_channels = len(cfg['channels'])
-                    # ims = [imgs_0, imgs_1]
-                    # for u in range(len_seq):
-                    #     for v in range(len(comb)):
-                    #         if u == comb[v, 0]:
-                    #             images.append(ims[0][v])
-                    #             break
-                    #         elif u == comb[v, 1]:
-                    #             images.append(ims[1][v])
-                    #             break
-                    # images = torch.stack(images)
-                    # n, c, h, w = images.shape
-                    # # for ch in range(n_channels):
-                    # #    writer.add_image("Images/Channel-{}".format(u), images[:, u, :, :].reshape(n, 1, h, w), dataformats='NCHW')
-
                     print("[{}] loss: {}".format(idx, loss.data))
                     preds_ = [preds[i].cpu().detach().numpy() for i in range(2)]
                     gts_ = [gts[i].cpu().detach().numpy() for i in range(2)]

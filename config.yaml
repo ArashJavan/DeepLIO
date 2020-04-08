@@ -1,6 +1,6 @@
 datasets:
     kitti:
-      root-path: "/media/ajava/Data/Datasets/KITTI/raw_unsync"
+      root-path: "/media/ajava/Data/KITTI/"
       image-width: 1800
       image-height: 64
       fov-up: 3.
@@ -10,12 +10,12 @@ datasets:
       min-depth: 2.
       inverse-depth: true
       train:
-          "2011_10_03": ['27', '42', '34']
-          "2011_09_30": ['16', '18', '20', '27']
+        2011-10-03: [27, 42, 34]
+        2011-09-30: [16, 18, 20, 27]
       test:
-          "2011_09_30": ['33', '34']
+        2011-09-30: [33, 34]
       val:
-          "2011_09_30": ['28']
+        2011-09-30: [28]
 
       mean: [0.2163, 0.6695] # channesl: x=0, y=1, z=2, remissions=3, range(x,y,z)=4, depth(x,y)=5
       std: [0.174, 0.3948] # channesl: x=0, y=1, z=2, remissions=3, range(x,y,z)=4, depth(x,y)=5
