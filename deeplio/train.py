@@ -2,6 +2,7 @@ import os
 import random
 import yaml
 import argparse
+import multiprocessing # getting number of cpus
 
 import torch
 from torchvision import transforms
@@ -14,9 +15,15 @@ from deeplio.models import deeplio_nets as net
 from deeplio.models.misc import *
 from deeplio.losses.losses import *
 from deeplio.common.spatial import *
+from deeplio.common.utils import set_seed
 from deeplio.visualization.utilities import *
 
 from pytorch_model_summary import summary
+
+SEED = 42
+
+def worker_init_fn(worker_id):
+    set_seed(seed=SEED)
 
 
 class Trainer:
@@ -27,14 +34,21 @@ class Trainer:
         self.seq_size = self.dataset_cfg['sequence-size']
 
         self.epoch = self.cfg['epoch']
+        num_workers = int(multiprocessing.cpu_count()/2)
 
         mean = np.array(self.dataset_cfg['mean'])
         std = np.array(self.dataset_cfg['std'])
 
+        set_seed(seed=SEED)
+
         transform = transforms.Compose([transfromers.ToTensor(),
                                         transfromers.Normalize(mean=mean, std=std)])
         dataset = kitti.Kitti(config=cfg, transform=transform)
-        self.train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size)
+        self.train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size,
+                                                            num_workers=num_workers,
+                                                            shuffle=True,
+                                                            worker_init_fn = worker_init_fn)
+
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size)
 
         self.tensor_writer = tensorboard.SummaryWriter()
@@ -46,7 +60,7 @@ class Trainer:
         self.model = net.DeepLIOS0(input_shape=(channels, None, None), p=0)
         self.model.to(self.device)
 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-6)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
         self.criterion = GeoConstLoss()
 
     def train(self):

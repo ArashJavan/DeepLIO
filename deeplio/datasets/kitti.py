@@ -1,9 +1,8 @@
 import os
 import torch
 import glob
-import yaml
 import datetime as dt
-import random
+import pickle
 from threading import Thread
 
 import time # for start stop calc
@@ -24,7 +23,7 @@ class KittiRawData:
     MAX_DIST_HDL64 = 120.
     IMU_LENGTH = 10.25
 
-    def __init__(self, base_path, date, drive, cfg, **kwargs):
+    def __init__(self, base_path, date, drive, cfg=None, oxts_bin=False, oxts_txt=True, **kwargs):
         self.drive = drive
         self.date = date
         self.dataset = kwargs.get('dataset', 'extract')
@@ -33,23 +32,27 @@ class KittiRawData:
         self.data_path = os.path.join(base_path, date, self.drive_full)
         self.frames = kwargs.get('frames', None)
 
-        self.image_width = cfg['image-width']
-        self.image_height = cfg['image-height']
-        self.fov_up = cfg['fov-up']
-        self.fov_down = cfg['fov-down']
-        self.seq_size = cfg['sequence-size']
-        self.max_depth = cfg['max-depth']
-        self.min_depth = cfg['min-depth']
-        self.inv_depth = cfg['inverse-depth']
+        if cfg is not None:
+            self.image_width = cfg['image-width']
+            self.image_height = cfg['image-height']
+            self.fov_up = cfg['fov-up']
+            self.fov_down = cfg['fov-down']
+            self.seq_size = cfg['sequence-size']
+            self.max_depth = cfg['max-depth']
+            self.min_depth = cfg['min-depth']
+            self.inv_depth = cfg['inverse-depth']
 
         # Find all the data files
         self._get_file_lists()
 
-        # Pre-load data that isn't returned as a generator
-        # Pre-load data that isn't returned as a generator
         #self._load_calib()
         self._load_timestamps()
-        #self._load_oxts()
+
+        # Give priority to binary files, sicne they are laoded much faster
+        if oxts_bin:
+            self._load_oxts_bin()
+        elif oxts_txt:
+            self._load_oxts()
 
         self.imu_get_counter = 0
 
@@ -139,6 +142,11 @@ class KittiRawData:
         """Load OXTS data from file."""
         self.oxts = np.array(utils.load_oxts_packets_and_poses(self.oxts_files))
 
+    def _load_oxts_bin(self):
+        oxts_file = os.path.join(self.data_path, 'oxts', 'data.pkl')
+        with open(oxts_file, 'rb') as f:
+            self.oxts = pickle.load(f)
+
     def _load_oxts_lazy(self, indices):
         oxts = utils.load_oxts_packets_and_poses(self.oxts_files[indices])
         return oxts
@@ -179,7 +187,7 @@ class Kitti(data.Dataset):
         self.seq_size = ds_config['sequence-size']
         self.channels = config['channels']
 
-        self.dataset = []
+        self.datasets = []
         self.length_each_drive = []
         self.bins = []
         self.images = [None] * self.seq_size
@@ -193,7 +201,7 @@ class Kitti(data.Dataset):
             for drive in drives:
                 date = str(date).replace('-', '_')
                 drive = '{0:04d}'.format(drive)
-                ds = KittiRawData(root_path, date, drive, ds_config)
+                ds = KittiRawData(root_path, date, drive, ds_config, oxts_bin=True)
 
                 length = len(ds)
 
@@ -203,7 +211,7 @@ class Kitti(data.Dataset):
                 last_bin_end = bin_end
 
                 self.length_each_drive.append(length)
-                self.dataset.append(ds)
+                self.datasets.append(ds)
 
         self.bins = np.asarray(self.bins)
         self.length_each_drive = np.array(self.length_each_drive)
@@ -216,8 +224,8 @@ class Kitti(data.Dataset):
         self.logger.info("Kitti-Dataset Informations")
         self.logger.info("DS-Type: {}, Length: {}, Seq.length: {}".format(ds_type, self.length, self.seq_size))
         for i in range(len(self.length_each_drive)):
-            date = self.dataset[i].date
-            drive = self.dataset[i].drive
+            date = self.datasets[i].date
+            drive = self.datasets[i].drive
             length = self.length_each_drive[i]
             bins = self.bins[i]
             self.logger.info("Date: {}, Drive: {}, length: {}, bins: {}".format(date, drive, length, bins))
@@ -262,7 +270,7 @@ class Kitti(data.Dataset):
             print("Error: No bins and no drive number found!")
             return None
 
-        dataset = self.dataset[num_drive]
+        dataset = self.datasets[num_drive]
 
         # get frame indices
         len_ds = len(dataset)
@@ -289,6 +297,7 @@ class Kitti(data.Dataset):
             mask = ((dataset.timestamps_imu >= velo_start_ts) & (dataset.timestamps_imu < velo_stop_ts))
             oxt_indices = np.argwhere(mask).flatten()
             len_oxt = len(oxt_indices)
+
             if (len_oxt== 0) or (len_oxt < self.MIN_NUM_OXT_SAMPLES):
                 self.logger.warning("Not enough OXT-samples: Index: {}, DS: {}_{}, len:{}, velo-timestamps: {}-{}".format(index, dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
                 tmp_imu = np.zeros((self.seq_size - 1, self.MAX_NUM_OXT_SAMPLES, 6))
@@ -299,10 +308,11 @@ class Kitti(data.Dataset):
                 data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': False}
                 return data
             else:
-                oxts = dataset._load_oxts_lazy(oxt_indices)
-                imu_values = np.array([[oxt.packet.ax, oxt.packet.ay, oxt.packet.az, oxt.packet.wx, oxt.packet.wy, oxt.packet.wz] for oxt in oxts])
-                gt = np.array(dataset.calc_gt_from_oxts(oxts))
+                oxts = dataset.oxts[oxt_indices]
+                imu_values = np.array([[oxt[0].ax, oxt[0].ay, oxt[0].az, oxt[0].wx, oxt[0].wy, oxt[0].wz] for oxt in oxts])
+                gt = np.array([oxt[1] for oxt in oxts])
 
+                # TODO we need a customized dataloader (maybe ccollate_fn-func) so we do not need to expand or crop here
                 if len_oxt > self.MAX_NUM_OXT_SAMPLES:
                     imu_values = imu_values[:self.MAX_NUM_OXT_SAMPLES]
                     gt = gt[:self.MAX_NUM_OXT_SAMPLES]
@@ -317,12 +327,13 @@ class Kitti(data.Dataset):
 
         items = [images, imus, gts]
 
+
         if self.transform:
              items = self.transform(items)
 
         data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': True}
 
         end = time.time()
-        #print("idx:{}, Delta-Time: {}".format(index, end - start))
+        self.logger.debug("Idx:{}, dt: {}".format(index, end - start))
 
         return data

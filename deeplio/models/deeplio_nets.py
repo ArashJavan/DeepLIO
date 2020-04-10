@@ -100,7 +100,7 @@ class DeepLIOS0(nn.Module):
         #self.net_1 = self.create_inner_net(channels=c)
         #self.forward_simese = self.create_inner_net(channels=c)
 
-        self.fc1 = nn.Linear(2*245888, 128)
+        self.fc1 = nn.Linear(2*37120, 128)
         self.fc2 = nn.Linear(128, 64)
         self.fc3 = nn.Linear(64, 16)
 
@@ -127,6 +127,20 @@ class DeepLIOS0(nn.Module):
                 nn.ReLU(),
 
                 nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
+                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
+                nn.ReLU(),
+
+                nn.Conv2d(64, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
+                nn.ReLU(),
+
+                nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
+                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
+                nn.ReLU(),
+
+                nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
+                nn.ReLU(),
+
+                nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
                 nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
                 nn.ReLU(),
             )

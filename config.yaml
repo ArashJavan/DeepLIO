@@ -1,6 +1,6 @@
 datasets:
     kitti:
-      root-path: "/media/ajava/Data/KITTI/"
+      root-path: "/media/ajava/Data/Datasets/KITTI/"
       image-width: 1800
       image-height: 64
       fov-up: 3.

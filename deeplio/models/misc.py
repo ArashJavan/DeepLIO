@@ -51,22 +51,28 @@ class PostProcessSiameseData(object):
         return res_im_0, res_im_1, res_gt, res_imu
 
     def calc_trans_mat_combis(self, transformations, combinations):
-        T_local = []
+        T_global = []
         for i in range(self.seq_size):
             if i == 0:
-                T_local.append(transformations[i, 0])
+                T_global.append(transformations[i, 0])
             else:
-                T_local.append(transformations[i-1, -1])
+                T_global.append(transformations[i-1, -1])
         T = []
         for combi in combinations:
-            max_idx = max(combi)
-            min_idx = min(combi)
-            T_tmp = T_local[min_idx + 1]
-            for i in range(min_idx + 1, max_idx):
-                T_i = T_local[i]
-                T_tmp = torch.matmul(T_tmp, T_i)
-            T.append(T_tmp)
+            T_i = T_global[combi[0]]
+            T_i_inv = self.inv_SE3(T_i)
+            T_ip1 = T_global[combi[1]]
+            T_i_ip1 = torch.matmul(T_i_inv, T_ip1)
+            T.append(T_i_ip1)
         return T
+
+    def inv_SE3(self, T):
+        R = T[:3, :3]
+        t = T[:3, 3]
+        T_inv = torch.eye(4)
+        T_inv[:3, :3] = R.T
+        T_inv[:3, 3] = -torch.matmul(R.T, t)
+        return  T_inv
 
     def __call__(self, args):
         return self.process(args)

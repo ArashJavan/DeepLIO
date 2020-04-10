@@ -2,6 +2,7 @@ import os
 import random
 import yaml
 import argparse
+import multiprocessing
 
 import torch
 from torchvision import transforms
@@ -15,6 +16,12 @@ from deeplio.visualization.utilities import *
 
 
 import matplotlib.pyplot as plt
+
+SEED = 42
+
+def worker_init_fn(worker_id):
+    set_seed(seed=42)
+
 
 def plot_images(images):
     img1, img2 = images[0], images[1]
@@ -41,12 +48,19 @@ class TestKittiGt:
         self.batch_size = self.cfg['batch-size']
         self.seq_size = self.dataset_cfg['sequence-size']
 
-        mean = np.array(self.dataset_cfg['mean'])
-        std = np.array(self.dataset_cfg['std'])
+        # For this test wen need all channels, no mather what is configured originally
+        cfg['channels'] = [0, 1, 2, 3, 4, 5]
 
+        set_seed(SEED)
+
+        num_workers = multiprocessing.cpu_count()
         transform = transforms.Compose([transfromers.ToTensor()])
         dataset = kitti.Kitti(config=cfg, transform=transform)
-        self.train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size)
+        self.train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size,
+                                                            num_workers=num_workers,
+                                                            shuffle=True,
+                                                            worker_init_fn = worker_init_fn)
+
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size)
 
     def run(self):
@@ -99,6 +113,7 @@ if __name__ == '__main__':
     with open(args['config']) as f:
         cfg = yaml.safe_load(f)
 
+    np.set_printoptions(precision=3, suppress=True)
     kitti_gt_test = TestKittiGt(cfg)
     kitti_gt_test.run()
     print("Done!")
