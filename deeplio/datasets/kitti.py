@@ -33,14 +33,15 @@ class KittiRawData:
         self.frames = kwargs.get('frames', None)
 
         if cfg is not None:
-            self.image_width = cfg['image-width']
-            self.image_height = cfg['image-height']
-            self.fov_up = cfg['fov-up']
-            self.fov_down = cfg['fov-down']
-            self.seq_size = cfg['sequence-size']
-            self.max_depth = cfg['max-depth']
-            self.min_depth = cfg['min-depth']
-            self.inv_depth = cfg['inverse-depth']
+            ds_config = cfg['kitti']
+            self.image_width = ds_config.get('image-width', 1024)
+            self.image_height = ds_config.get('image-height', 64)
+            self.fov_up = ds_config.get('fov-up', 3)
+            self.fov_down = ds_config.get('fov-down', -25)
+            self.seq_size = cfg.get('sequence-size', 2)
+            self.max_depth = ds_config.get('max-depth', 80)
+            self.min_depth = ds_config.get('min-depth', 2)
+            self.inv_depth = ds_config.get('inverse-depth', False)
 
         # Find all the data files
         self._get_file_lists()
@@ -178,14 +179,15 @@ class Kitti(data.Dataset):
         :param config: Configuration file including split settings
         :param transform:
         """
-        ds_config = config['datasets']['kitti']
+        ds_config_common = config['datasets']
+        ds_config = ds_config_common['kitti']
         root_path = ds_config['root-path']
 
-        self.transform = transform
+        self.seq_size = ds_config_common['sequence-size']
+        self.channels = config['channels']
 
         self.ds_type = ds_type
-        self.seq_size = ds_config['sequence-size']
-        self.channels = config['channels']
+        self.transform = transform
 
         self.datasets = []
         self.length_each_drive = []
@@ -201,7 +203,7 @@ class Kitti(data.Dataset):
             for drive in drives:
                 date = str(date).replace('-', '_')
                 drive = '{0:04d}'.format(drive)
-                ds = KittiRawData(root_path, date, drive, ds_config, oxts_bin=True)
+                ds = KittiRawData(root_path, date, drive, ds_config_common, oxts_bin=True)
 
                 length = len(ds)
 
@@ -334,6 +336,6 @@ class Kitti(data.Dataset):
         data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': True}
 
         end = time.time()
-        self.logger.debug("Idx:{}, dt: {}".format(index, end - start))
+        #self.logger.debug("Idx:{}, dt: {}".format(index, end - start))
 
         return data

@@ -16,7 +16,7 @@ class PostProcessSiameseData(object):
         res_imu = []
         res_gt = []
 
-        for i in range(self.batch_size):
+        for i in range(len(images)):
             imgs = images[i]
             imus = oxts[0][i]
             gts = oxts[1][i]

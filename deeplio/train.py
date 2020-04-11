@@ -17,10 +17,10 @@ from deeplio.losses.losses import *
 from deeplio.common.spatial import *
 from deeplio.common.utils import set_seed
 from deeplio.visualization.utilities import *
-
-from pytorch_model_summary import summary
+from deeplio.common.logger import PyLogger
 
 SEED = 42
+
 
 def worker_init_fn(worker_id):
     set_seed(seed=SEED)
@@ -29,22 +29,23 @@ def worker_init_fn(worker_id):
 class Trainer:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.dataset_cfg = self.cfg['datasets'][self.cfg['current-dataset']]
+        self.ds_cfg = self.cfg['datasets']
+        self.curr_dataset_cfg = self.cfg['datasets'][self.cfg['current-dataset']]
         self.batch_size = self.cfg['batch-size']
-        self.seq_size = self.dataset_cfg['sequence-size']
+        self.seq_size = self.ds_cfg['sequence-size']
 
-        self.epoch = self.cfg['epoch']
-        num_workers = int(multiprocessing.cpu_count()/2)
+        self.n_epoch = self.cfg['epoch']
+        num_workers = min(int(multiprocessing.cpu_count()/2), 4)
 
-        mean = np.array(self.dataset_cfg['mean'])
-        std = np.array(self.dataset_cfg['std'])
+        mean = np.array(self.curr_dataset_cfg['mean'])
+        std = np.array(self.curr_dataset_cfg['std'])
 
         set_seed(seed=SEED)
 
         transform = transforms.Compose([transfromers.ToTensor(),
                                         transfromers.Normalize(mean=mean, std=std)])
-        dataset = kitti.Kitti(config=cfg, transform=transform)
-        self.train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size,
+        self.dataset = kitti.Kitti(config=cfg, transform=transform)
+        self.train_dataloader = torch.utils.data.DataLoader(self.dataset, batch_size=self.batch_size,
                                                             num_workers=num_workers,
                                                             shuffle=True,
                                                             worker_init_fn = worker_init_fn)
@@ -63,49 +64,56 @@ class Trainer:
         self.optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
         self.criterion = GeoConstLoss()
 
+        self.logger = PyLogger("deeplio_training")
+
     def train(self):
+        for epoch in range(self.n_epoch):
+            self.logger.info("Starting epoch {}".format(epoch))
+            self.train_internal(epoch)
+        self.logger.info("Training done!")
+
+    def train_internal(self, epoch):
         writer = self.tensor_writer
         optimizer = self.optimizer
         criterion = self.criterion
         model = self.model
         model.train()
 
-        for epoch in range(self.epoch):
-            running_loss = 0.
-            for idx, data in enumerate(self.train_dataloader):
+        running_loss = 0.
+        for idx, data in enumerate(self.train_dataloader):
 
-                # skip invalid data without ground-truth
-                if not torch.all(data['valid']):
-                    continue
+            # skip invalid data without ground-truth
+            if not torch.all(data['valid']):
+                continue
 
-                imgs_0, imgs_1, gts, imus = self.post_processor(data)
-                imgs_0 = imgs_0.to(self.device)
-                imgs_1 = imgs_1.to(self.device)
-                gts = gts.to(self.device)
-                imus = [imu.to(self.device) for imu in imus]
+            imgs_0, imgs_1, gts, imus = self.post_processor(data)
+            imgs_0 = imgs_0.to(self.device)
+            imgs_1 = imgs_1.to(self.device)
+            gts = gts.to(self.device)
+            imus = [imu.to(self.device) for imu in imus]
 
-                # zero the parameter gradients
-                optimizer.zero_grad()
+            # zero the parameter gradients
+            optimizer.zero_grad()
 
-                preds = model([imgs_0, imgs_1])
+            preds = model([imgs_0, imgs_1])
 
-                gt_pos = gts[:, :3, 3].contiguous()
-                gt_rot = rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
-                gts = [gt_pos, gt_rot]
+            gt_pos = gts[:, :3, 3].contiguous()
+            gt_rot = rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
+            gts = [gt_pos, gt_rot]
 
-                loss = criterion(preds, gts)
+            loss = criterion(preds, gts)
 
-                loss.backward()
-                optimizer.step()
+            loss.backward()
+            optimizer.step()
 
-                running_loss += loss.item()
-                if idx % 10 == 0:
-                    writer.add_scalar("Loss/train", running_loss / 10, len(self.train_dataloader) + idx)
-                    running_loss = 0.
-                    print("[{}] loss: {}".format(idx, loss.data))
-                    preds_ = [preds[i].cpu().detach().numpy() for i in range(2)]
-                    gts_ = [gts[i].cpu().detach().numpy() for i in range(2)]
-                    print("{}\n{}".format(preds_[0], gts_[0]))
+            running_loss += loss.item()
+            if idx % 10 == 0:
+                writer.add_scalar("Loss/train", running_loss / 10, len(self.train_dataloader) + idx)
+                running_loss = 0.
+                print("[{}] loss: {}".format(idx, loss.data))
+                preds_ = preds.detach().cpu().numpy()
+                gts_ = [gts[i].cpu().detach().numpy() for i in range(2)]
+                print("{}\n{}".format(preds_, gts_[0]))
 
 
 if __name__ == '__main__':

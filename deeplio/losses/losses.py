@@ -9,7 +9,7 @@ class GeoConstLoss(nn.Module):
         self.loss_fn = nn.MSELoss(reduction='sum')
 
     def forward(self, pred, gt):
-        x = pred[0]
+        x = pred
         x_gt = gt[0]
 
         loss = self.loss_fn(x, x_gt)

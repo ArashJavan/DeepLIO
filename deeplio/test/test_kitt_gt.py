@@ -44,9 +44,12 @@ def draw_registration_result(source, target, transformation):
 class TestKittiGt:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.dataset_cfg = self.cfg['datasets'][self.cfg['current-dataset']]
         self.batch_size = self.cfg['batch-size']
-        self.seq_size = self.dataset_cfg['sequence-size']
+
+        self.ds_cfg = self.cfg['datasets']
+        self.seq_size = self.ds_cfg['sequence-size']
+
+        self.curr_dataset_cfg = self.cfg['datasets'][self.cfg['current-dataset']]
 
         # For this test wen need all channels, no mather what is configured originally
         cfg['channels'] = [0, 1, 2, 3, 4, 5]
