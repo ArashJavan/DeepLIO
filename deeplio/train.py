@@ -7,6 +7,8 @@ import shutil
 import argparse
 from pathlib import Path
 
+import numpy as np
+
 import torch
 from torch.backends import cudnn
 from torchvision import transforms
@@ -16,18 +18,30 @@ from torchvision.utils import make_grid
 
 from pytorch_model_summary import summary
 
+dname = os.path.abspath(os.path.dirname(__file__))
+content_dir = os.path.abspath("{}/..".format(dname))
+sys.path.append(dname)
+sys.path.append(content_dir)
+
 from deeplio.datasets import kitti, transfromers
 from deeplio.models import deeplio_nets as net
 from deeplio.models.misc import *
 from deeplio.losses.losses import *
-from deeplio.visualization.utilities import *
 from deeplio.common.spatial import *
-from deeplio.common.utils import *
+from deeplio.common.utils import colorize
 from deeplio.common import logger
 from deeplio.common.logger import PyLogger
 
 
 SEED = 42
+
+
+def set_seed(seed=42):
+    random.seed(seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
 
 
 def worker_init_fn(worker_id):
@@ -46,11 +60,11 @@ class Trainer:
         self.cfg = cfg
         self.ds_cfg = self.cfg['datasets']
         self.curr_dataset_cfg = self.cfg['datasets'][self.cfg['current-dataset']]
-        self.batch_size = self.cfg['batch-size']
         self.seq_size = self.ds_cfg['sequence-size']
 
-        self.n_epoch = self.cfg['epoch']
-        num_workers = self.cfg.get('num-workers', 0)
+        self.batch_size = self.args.batch_size
+        self.epochs = self.args.epochs
+        num_workers = self.args.workers
 
         mean = np.array(self.curr_dataset_cfg['mean'])
         std = np.array(self.curr_dataset_cfg['std'])
@@ -75,7 +89,8 @@ class Trainer:
 
         set_seed(seed=SEED)
 
-        self.logger = PyLogger(filename="{}/train_{}.log".format(log_dir, datetime.datetime.now()))
+        flog_name = "{}/train_{}.log".format(log_dir, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+        self.logger = PyLogger(filename=flog_name)
         logger.global_logger = self.logger
 
         # preapre dataset and dataloaders
@@ -106,6 +121,8 @@ class Trainer:
 
         # debugging and visualizing
         self.logger.print("DeepLIO Training Configurations:")
+        self.logger.print("lr: {}, batch-size:{}, workers: {}, epochs:{}".
+                          format(self.args.lr, self.batch_size, num_workers, self.epochs))
         self.logger.print(yaml.dump(self.cfg))
         self.logger.print(self.train_dataset)
         self.logger.print(self.val_dataset)
@@ -117,10 +134,9 @@ class Trainer:
         self.tensor_writer.add_graph(self.model, imgs)
 
     def train(self):
-        for epoch in range(self.n_epoch):
-            self.logger.info("Starting epoch {}".format(epoch))
-
-            self.adjust_learning_rate(epoch)
+        for epoch in range(self.epochs):
+            lr = self.adjust_learning_rate(epoch)
+            self.logger.info("Starting epoch:{}, lr:{}".format(epoch, lr))
 
             # train for one epoch
             self.train_data(epoch)
@@ -139,6 +155,7 @@ class Trainer:
                 'optimizer' : self.optimizer.state_dict(),
             }, is_best)
 
+        self.tensor_writer.close()
         self.logger.info("Training done!")
 
     def train_data(self, epoch):
@@ -221,6 +238,10 @@ class Trainer:
                 imgs_depth = make_grid(imgs_depth, nrow=2)
                 self.tensor_writer.add_image("Image depth", imgs_depth, global_step=step_val)
 
+                for tag, param in self.model.named_parameters():
+                    self.tensor_writer.add_histogram(tag, param.grad.detach().cpu().numpy(), step_val)
+                self.tensor_writer.flush()
+
     def validate(self):
         writer = self.tensor_writer
         optimizer = self.optimizer
@@ -272,6 +293,28 @@ class Trainer:
 
                 if idx % args.print_freq == 0:
                     progress.display(idx)
+
+                    # update tensorboard
+                    step_val = epoch * len(self.train_dataloader) + idx
+                    self.tensor_writer.add_scalar("Loss", losses.avg, step_val)
+                    imgs = data['images'].reshape(self.batch_size * self.seq_size,
+                                                  self.n_channels, self.im_height, self.im_width)
+                    imgs_remossion = imgs[:, 0:1, :, :]
+                    imgs_remossion = [torch.from_numpy(colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
+                    imgs_remossion = torch.stack(imgs_remossion)
+                    imgs_remossion = make_grid(imgs_remossion, nrow=2)
+                    self.tensor_writer.add_image("Image remissions", imgs_remossion, global_step=step_val)
+
+                    imgs_depth = imgs[:, 1:2, :, :]
+                    imgs_depth = [torch.from_numpy(colorize(img, cmap='viridis')).permute(2, 0, 1) for img in
+                                  imgs_depth]
+                    imgs_depth = torch.stack(imgs_depth)
+                    imgs_depth = make_grid(imgs_depth, nrow=2)
+                    self.tensor_writer.add_image("Image depth", imgs_depth, global_step=step_val)
+
+                    for tag, param in self.model.named_parameters():
+                        self.tensor_writer.add_histogram(tag, param.grad.detach().cpu().numpy(), step_val)
+                    self.tensor_writer.flush()
         return losses.avg
 
     def save_checkpoint(self, state, is_best, filename='checkpoint.pth.tar'):
@@ -280,10 +323,11 @@ class Trainer:
             shutil.copyfile(filename, "model_best.pth.tar")
 
     def adjust_learning_rate(self, epoch):
-        """Sets the learning rate to the niital LR decayed by 10 every 2 epochs """
-        lr = self.args.lr * (0.1 ** (epoch // 2))
+        """Sets the learning rate to the niital LR decayed by 10 every 10 epochs """
+        lr = self.args.lr * (0.1 ** (epoch // 10))
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
+        return lr
 
 
 class AverageMeter(object):
@@ -345,14 +389,18 @@ class ProgressMeter(object):
 
 
 if __name__ == '__main__':
-    dname = os.path.dirname(__file__)
-    content_dir = os.path.abspath("{}/..".format(dname))
-    sys.path.append(dname)
-    sys.path.append(content_dir)
-
     parser = argparse.ArgumentParser(description='DeepLIO Training')
 
     # Hyper Params
+    parser.add_argument('-j', '--workers', default=0, type=int, metavar='N',
+                        help='number of data loading workers (default: 4)')
+    parser.add_argument('--epochs', default=1, type=int, metavar='N',
+                        help='number of total epochs to run')
+    parser.add_argument('-b', '--batch-size', default=1, type=int,
+                        metavar='N',
+                        help='mini-batch size (default: 1), this is the total '
+                             'batch size of all GPUs on the current node when '
+                             'using Data Parallel or Distributed Data Parallel')
     parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                         help='manual epoch number (useful on restarts)')
     parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float,

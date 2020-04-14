@@ -4,11 +4,9 @@
  - and some other useful functions
 """
 
-import random
 import numpy as np
 import matplotlib
 import matplotlib.cm
-import torch
 import open3d as o3d
 
 from collections import namedtuple
@@ -216,14 +214,6 @@ def convert_velo_img_to_o3d(img):
     xyz = convert_velo_img_to_pcl(img)
     pcd = convert_cloud_numpy_to_o3d(xyz)
     return pcd
-
-
-def set_seed(seed=42):
-    random.seed(seed)
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
 
 
 def colorize(value, vmin=None, vmax=None, cmap='jet'):
