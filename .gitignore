@@ -130,6 +130,6 @@ pip-selfcheck.json
 
 .idea/
 
-doc/papers
+docs/papers
 
 .directory

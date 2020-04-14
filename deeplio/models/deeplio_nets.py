@@ -96,21 +96,20 @@ class DeepLIOS0(nn.Module):
         c, h, w = input_shape # number of channels, width and height
         # Siamese sqeeuze feature extraction networks
 
-        self.net_0 = self.create_inner_net(channels=c)
-        self.net_1 = self.create_inner_net(channels=c)
-        #self.forward_simese = self.create_inner_net(channels=c)
+        self.siamese_net = self.create_inner_net(channels=c)
 
         # in-feature size autodetection
         x = torch.randn((1, c, h, w))
-        x = self.net_0(x).detach()
-        self.net_0.zero_grad()
+        x = self.siamese_net(x).detach()
+        self.siamese_net.zero_grad()
         _, c, h, w = x.shape
+        self.fc_in_shape = (c, h, w)
 
-        self.fc1 = nn.Linear(2*c*h*w, 256)
-        self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, 64)
+        self.fc1 = nn.Linear(c*h*w, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, 16)
 
-        self.fc_pos = nn.Linear(64, 3)
+        self.fc_pos = nn.Linear(16, 3)
         #self.fc_ori = nn.Linear(64, 4)
 
     def create_inner_net(self, channels):
@@ -126,24 +125,10 @@ class DeepLIOS0(nn.Module):
                 nn.ReLU(True),
 
                 nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
-                nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True),
-                nn.ReLU(True),
-
-                nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
-                nn.ReLU(True),
-
-                nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
-                nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True),
-                nn.ReLU(True),
-
-                nn.Conv2d(64, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
-                nn.ReLU(True),
-
-                nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
                 nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
                 nn.ReLU(True),
 
-                nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
+                nn.Conv2d(64, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
                 nn.ReLU(True),
 
                 nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
@@ -158,16 +143,13 @@ class DeepLIOS0(nn.Module):
         imgs_0 = images[0]
         imgs_1 = images[1]
 
-        out_0 = self.net_0(imgs_0)
-        out_1 = self.net_1(imgs_1)
-
-        #out_0 = self.forward_simese(imgs_0)
-        #out_1 = self.forward_simese(imgs_1)
+        out_0 = self.siamese_net(imgs_0)
+        out_1 = self.siamese_net(imgs_1)
 
         out_0 = out_0.view(-1, self.num_flat_features(out_0))
         out_1 = out_1.view(-1, self.num_flat_features(out_1))
 
-        out = torch.cat((out_0, out_1), dim=1)
+        out = out_1 - out_0
         out = F.relu(self.fc1(out))
         out = F.relu(self.fc2(out))
         out = F.relu(self.fc3(out))
@@ -183,8 +165,8 @@ class DeepLIOS0(nn.Module):
             num_features *= s
         return num_features
 
-
-
+    def repr(self):
+        return "{}\nIn-features 1st Linear: {}".format(self.__class__.__name__, self.fc_in_shape)
 
 
 

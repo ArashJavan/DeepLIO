@@ -13,7 +13,7 @@ import torch.utils.data as data
 
 from deeplio.common import utils
 from deeplio.common.laserscan import LaserScan
-from deeplio.common.logger import PyLogger
+from deeplio.common import logger
 
 
 class KittiRawData:
@@ -230,7 +230,7 @@ class Kitti(data.Dataset):
 
         self.length = self.bins.flatten()[-1] + 1
 
-        self.logger = PyLogger(name="KittiDataset_{}".format(self.ds_type))
+        self.logger = logger.global_logger
 
     def load_images(self, dataset, indices):
         threads = [None] * self.seq_size

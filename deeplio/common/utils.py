@@ -4,18 +4,16 @@
  - and some other useful functions
 """
 
-import torch
 import random
-
-from collections import namedtuple
-
 import numpy as np
-from PIL import Image
-
+import matplotlib
+import matplotlib.cm
+import torch
 import open3d as o3d
 
-__author__ = "Lee Clement"
-__email__ = "lee.clement@robotics.utias.utoronto.ca"
+from collections import namedtuple
+from PIL import Image
+
 
 # Per dataformat.txt
 OxtsPacket = namedtuple('OxtsPacket',
@@ -227,3 +225,37 @@ def set_seed(seed=42):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
 
+
+def colorize(value, vmin=None, vmax=None, cmap='jet'):
+    """
+    A utility function for Torch/Numpy that maps a grayscale image to a matplotlib
+    colormap for use with TensorBoard image summaries.
+    By default it will normalize the input value to the range 0..1 before mapping
+    to a grayscale colormap.
+    Arguments:
+      - value: 2D Tensor of shape [height, width] or 3D Tensor of shape
+        [height, width, 1].
+      - vmin: the minimum value of the range used for normalization.
+        (Default: value minimum)
+      - vmax: the maximum value of the range used for normalization.
+        (Default: value maximum)
+      - cmap: a valid cmap named for use with matplotlib's `get_cmap`.
+        (Default: Matplotlib default colormap)
+
+    Returns a 4D uint8 tensor of shape [height, width, 4].
+    """
+
+    # normalize
+    vmin = value.min() if vmin is None else vmin
+    vmax = value.max() if vmax is None else vmax
+    if vmin != vmax:
+        value = (value - vmin) / (vmax - vmin)  # vmin..vmax
+    else:
+        # Avoid 0-division
+        value = value * 0.
+    # squeeze last dim if it exists
+    value = value.squeeze()
+
+    cmapper = matplotlib.cm.get_cmap(cmap)
+    value = cmapper(value, bytes=True)  # (nxmx4)
+    return value

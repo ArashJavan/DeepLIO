@@ -20,22 +20,27 @@ class DummyLogger(Logger):
 
 
 class PyLogger(object):
-    def __init__(self, name="deeploi"):
+    def __init__(self, name="deeploi", filename="deeplio.txt"):
         super(PyLogger, self).__init__()
         self.logger = logging.getLogger(name=name)
         self.logger.setLevel(logging.DEBUG)
 
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.DEBUG)
+        self.ch = logging.StreamHandler()
+        self.ch.setLevel(logging.DEBUG)
+
+        self.fh = logging.FileHandler(filename)
+        self.ch.setLevel(logging.DEBUG)
 
         # create formatter
-        formatter = logging.Formatter('%(levelname)s: %(message)s')
+        self.formatter = logging.Formatter('%(levelname)s: %(message)s')
 
         # add formatter to ch
-        ch.setFormatter(formatter)
+        self.ch.setFormatter(self.formatter)
+        self.fh.setFormatter(self.formatter)
 
         # add ch to logger
-        self.logger.addHandler(ch)
+        self.logger.addHandler(self.ch)
+        self.logger.addHandler(self.fh)
 
     def error(self, msg, *args , **kwargs):
         self.logger.error(msg, *args)
@@ -48,3 +53,18 @@ class PyLogger(object):
 
     def warning(self, msg, *args, **kwargs):
         self.logger.warning(msg, *args)
+
+    def print(self, msg, *args, **kwargs):
+        # create formatter
+        formatter = logging.Formatter('%(message)s')
+
+        # add formatter to ch
+        self.ch.setFormatter(formatter)
+        self.fh.setFormatter(formatter)
+
+        self.logger.info(msg, *args)
+
+        self.ch.setFormatter(self.formatter)
+        self.fh.setFormatter(self.formatter)
+
+global_logger = None
