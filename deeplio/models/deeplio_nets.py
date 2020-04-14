@@ -100,49 +100,55 @@ class DeepLIOS0(nn.Module):
         self.net_1 = self.create_inner_net(channels=c)
         #self.forward_simese = self.create_inner_net(channels=c)
 
-        self.fc1 = nn.Linear(2*37120, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, 16)
+        # in-feature size autodetection
+        x = torch.randn((1, c, h, w))
+        x = self.net_0(x).detach()
+        self.net_0.zero_grad()
+        _, c, h, w = x.shape
 
-        self.fc_pos = nn.Linear(16, 3)
+        self.fc1 = nn.Linear(2*c*h*w, 256)
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, 64)
+
+        self.fc_pos = nn.Linear(64, 3)
         #self.fc_ori = nn.Linear(64, 4)
 
     def create_inner_net(self, channels):
         net = nn.Sequential(
                 nn.Conv2d(channels, out_channels=32, kernel_size=3, stride=(1, 1), padding=1),
-                nn.ReLU(),
+                nn.ReLU(True),
 
                 nn.Conv2d(32, out_channels=32, kernel_size=3, stride=(1, 1), padding=1),
                 nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True),
-                nn.ReLU(),
+                nn.ReLU(True),
 
                 nn.Conv2d(32, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
-                nn.ReLU(),
+                nn.ReLU(True),
 
                 nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
-                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
-                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True),
+                nn.ReLU(True),
 
                 nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
-                nn.ReLU(),
+                nn.ReLU(True),
 
                 nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
-                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
-                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True),
+                nn.ReLU(True),
 
                 nn.Conv2d(64, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
-                nn.ReLU(),
+                nn.ReLU(True),
 
                 nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
                 nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
-                nn.ReLU(),
+                nn.ReLU(True),
 
                 nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
-                nn.ReLU(),
+                nn.ReLU(True),
 
                 nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
                 nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
-                nn.ReLU(),
+                nn.ReLU(True),
             )
         return net
 
@@ -158,18 +164,25 @@ class DeepLIOS0(nn.Module):
         #out_0 = self.forward_simese(imgs_0)
         #out_1 = self.forward_simese(imgs_1)
 
-        a, b, c, d = out_0.size()
-        out_0 = out_0.view(-1, b * c * d)
-        out_1 = out_1.view(-1, b * c * d)
+        out_0 = out_0.view(-1, self.num_flat_features(out_0))
+        out_1 = out_1.view(-1, self.num_flat_features(out_1))
 
         out = torch.cat((out_0, out_1), dim=1)
-        out = self.fc1(out)
-        out = self.fc2(out)
-        out = self.fc3(out)
+        out = F.relu(self.fc1(out))
+        out = F.relu(self.fc2(out))
+        out = F.relu(self.fc3(out))
 
         pos = self.fc_pos(out)
         #ori = torch.zeros((1, 3), requires_grad=False) #self.fc_ori(out)
         return pos
+
+    def num_flat_features(self, x):
+        size = x.size()[1:]  # all dimensions except the batch dimension
+        num_features = 1
+        for s in size:
+            num_features *= s
+        return num_features
+
 
 
 

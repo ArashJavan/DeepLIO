@@ -1,8 +1,7 @@
 import os
-import random
+import sys
 import yaml
 import argparse
-import multiprocessing # getting number of cpus
 
 import torch
 from torchvision import transforms
@@ -19,6 +18,7 @@ from deeplio.common.utils import set_seed
 from deeplio.visualization.utilities import *
 from deeplio.common.logger import PyLogger
 
+
 SEED = 42
 
 
@@ -27,7 +27,10 @@ def worker_init_fn(worker_id):
 
 
 class Trainer:
-    def __init__(self, cfg):
+    def __init__(self, args):
+        with open(args['config']) as f:
+            cfg = yaml.safe_load(f)
+
         self.cfg = cfg
         self.ds_cfg = self.cfg['datasets']
         self.curr_dataset_cfg = self.cfg['datasets'][self.cfg['current-dataset']]
@@ -35,7 +38,7 @@ class Trainer:
         self.seq_size = self.ds_cfg['sequence-size']
 
         self.n_epoch = self.cfg['epoch']
-        num_workers = min(int(multiprocessing.cpu_count()/2), 4)
+        num_workers = self.cfg.get('num-workers', 0)
 
         mean = np.array(self.curr_dataset_cfg['mean'])
         std = np.array(self.curr_dataset_cfg['std'])
@@ -44,21 +47,29 @@ class Trainer:
 
         transform = transforms.Compose([transfromers.ToTensor(),
                                         transfromers.Normalize(mean=mean, std=std)])
-        self.dataset = kitti.Kitti(config=cfg, transform=transform)
-        self.train_dataloader = torch.utils.data.DataLoader(self.dataset, batch_size=self.batch_size,
+
+        self.train_dataset = kitti.Kitti(config=cfg, transform=transform)
+        self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
                                                             num_workers=num_workers,
                                                             shuffle=True,
                                                             worker_init_fn = worker_init_fn)
 
+        self.val_dataset = kitti.Kitti(config=cfg, transform=transform, ds_type='validation')
+        self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size,
+                                                            num_workers=num_workers,
+                                                            shuffle=False,
+                                                            worker_init_fn = worker_init_fn)
+
+
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size)
 
-        self.tensor_writer = tensorboard.SummaryWriter()
+        self.tensor_writer = tensorboard.SummaryWriter(log_dir=self.cfg['log-dir'])
 
-        os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(str(e) for e in args.gpu_ids)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        channels = len(self.cfg['channels'])
-        self.model = net.DeepLIOS0(input_shape=(channels, None, None), p=0)
+        H, W = self.curr_dataset_cfg['image-height'], self.curr_dataset_cfg['image-width']
+        C = len(self.cfg['channels'])
+        self.model = net.DeepLIOS0(input_shape=(C, H, W), p=0)
         self.model.to(self.device)
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
@@ -66,13 +77,22 @@ class Trainer:
 
         self.logger = PyLogger("deeplio_training")
 
+        # debugging and visualizing
+        print("DeepLIO Training")
+        print("n-workers: {}, batch-size: {}, seq-size:{}, lr:{}, in-shape: ({},{},{})".format(
+            num_workers, self.batch_size, self.seq_size, args.lr, C, H, W))
+        print(self.train_dataset)
+        print(self.val_dataset)
+
+        self.tensor_writer.add_graph(self.model, torch.randn((2, 3, C, H, W)).to(self.device))
+
     def train(self):
         for epoch in range(self.n_epoch):
             self.logger.info("Starting epoch {}".format(epoch))
-            self.train_internal(epoch)
+            self.train_internal()
         self.logger.info("Training done!")
 
-    def train_internal(self, epoch):
+    def train_internal(self):
         writer = self.tensor_writer
         optimizer = self.optimizer
         criterion = self.criterion
@@ -117,32 +137,44 @@ class Trainer:
 
 
 if __name__ == '__main__':
+    dname = os.path.dirname(__file__)
+    content_dir = os.path.abspath("{}/..".format(dname))
+    sys.path.append(dname)
+    sys.path.append(content_dir)
+
     parser = argparse.ArgumentParser(description='DeepLIO Training')
 
-    parser.add_argument('--model_path', default='./model', type=str, help='path to where model')
-
     # Hyper Params
-    parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')
-    parser.add_argument('--momentum', default=0.9, type=float, help='momentum for optim')
-    parser.add_argument('--weight_decay', default=0.0001, type=float, help='weight decay for optim')
-    parser.add_argument('--lr_step', default=1000, type=int, help='number of lr step')
-    parser.add_argument('--lr_gamma', default=0.1, type=float, help='gamma for lr scheduler')
+    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+                        help='number of data loading workers (default: 4)')
+    parser.add_argument('--epochs', default=5, type=int, metavar='N',
+                        help='number of total epochs to run')
+    parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
+                        help='manual epoch number (useful on restarts)')
+    parser.add_argument('-b', '--batch-size', default=4, type=int,
+                        metavar='N',
+                        help='mini-batch size (default: 256), this is the total '
+                             'batch size of all GPUs on the current node when '
+                             'using Data Parallel or Distributed Data Parallel')
+    parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
+                        metavar='LR', help='initial learning rate', dest='lr')
+    parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
+                        help='momentum')
+    parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
+                        metavar='W', help='weight decay (default: 1e-4)',
+                        dest='weight_decay')
+    parser.add_argument('-p', '--print-freq', default=10, type=int,
+                        metavar='N', help='print frequency (default: 10)')
+    parser.add_argument('--resume', default='', type=str, metavar='PATH',
+                        help='path to latest checkpoint (default: none)')
+    parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
+                        help='evaluate model on validation set')
 
-    parser.add_argument('--epochs', default=5, type=int, help='number of total epochs to run')
-    parser.add_argument('--start_epoch', default=0, type=int, help='number of epoch to start learning')
-    parser.add_argument('--pretrain', default=False, type=bool, help='Whether or not to pretrain')
-    parser.add_argument('--resume', default=False, type=bool, help='Whether or not to resume')
+    parser.add_argument('-c', '--config', default="./config.yaml", help='Path to configuration file')
 
-    # Device Option
-    parser.add_argument('--gpu_ids', dest='gpu_ids', default=[0, 1], nargs="+", type=int, help='which gpu you use')
-    parser.add_argument('-b', '--batch_size', default=1, type=int, help='mini-batch size')
+    args = vars(parser.parse_args())
 
-    args = parser.parse_args()
-
-    with open("../config.yaml") as f:
-        cfg = yaml.safe_load(f)
-
-    trainer = Trainer(cfg)
+    trainer = Trainer(args)
     trainer.train()
 
 

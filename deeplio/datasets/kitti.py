@@ -44,7 +44,7 @@ class KittiRawData:
             self.inv_depth = ds_config.get('inverse-depth', False)
 
         # Find all the data files
-        self._get_file_lists()
+        self._get_velo_files()
 
         #self._load_calib()
         self._load_timestamps()
@@ -53,6 +53,7 @@ class KittiRawData:
         if oxts_bin:
             self._load_oxts_bin()
         elif oxts_txt:
+            self._get_oxt_files()
             self._load_oxts()
 
         self.imu_get_counter = 0
@@ -79,23 +80,32 @@ class KittiRawData:
         image = np.dstack((proj_xyz, proj_remission, proj_range, proj_range_xy))
         return image
 
-    def _get_file_lists(self):
-        """Find and list data files for each sensor."""
-        self.oxts_files = sorted(glob.glob(
-            os.path.join(self.data_path, 'oxts', 'data', '*.txt')))
+    def _get_velo_files(self):
+        # first try to get binary files
         self.velo_files = sorted(glob.glob(
             os.path.join(self.data_path, 'velodyne_points',
-                         'data', '*.*')))
+                         'data', '*.npy')))
+        # if there is no bin files for velo, so the velo file are in text format
+        if self.velo_files is None:
+            self.velo_files = sorted(glob.glob(
+                os.path.join(self.data_path, 'velodyne_points',
+                             'data', '*.txt')))
 
         # Subselect the chosen range of frames, if any
         if self.frames is not None:
-            self.oxts_files = utils.subselect_files(
-                self.oxts_files, self.frames)
             self.velo_files = utils.subselect_files(
                 self.velo_files, self.frames)
-
-        self.oxts_files = np.asarray(self.oxts_files)
         self.velo_files = np.asarray(self.velo_files)
+
+    def _get_oxt_files(self):
+        """Find and list data files for each sensor."""
+        self.oxts_files = sorted(glob.glob(
+            os.path.join(self.data_path, 'oxts', 'data', '*.txt')))
+
+        if self.frames is not None:
+            self.oxts_files = utils.subselect_files(
+                self.oxts_files, self.frames)
+        self.oxts_files = np.asarray(self.oxts_files)
 
     def _load_calib_rigid(self, filename):
         """Read a rigid transform calibration file as a numpy.array."""
@@ -220,17 +230,7 @@ class Kitti(data.Dataset):
 
         self.length = self.bins.flatten()[-1] + 1
 
-        self.logger = PyLogger(name="KittiDataset")
-
-        # printing dataset informations
-        self.logger.info("Kitti-Dataset Informations")
-        self.logger.info("DS-Type: {}, Length: {}, Seq.length: {}".format(ds_type, self.length, self.seq_size))
-        for i in range(len(self.length_each_drive)):
-            date = self.datasets[i].date
-            drive = self.datasets[i].drive
-            length = self.length_each_drive[i]
-            bins = self.bins[i]
-            self.logger.info("Date: {}, Drive: {}, length: {}, bins: {}".format(date, drive, length, bins))
+        self.logger = PyLogger(name="KittiDataset_{}".format(self.ds_type))
 
     def load_images(self, dataset, indices):
         threads = [None] * self.seq_size
@@ -339,3 +339,18 @@ class Kitti(data.Dataset):
         #self.logger.debug("Idx:{}, dt: {}".format(index, end - start))
 
         return data
+
+    def __repr__(self):
+        # printing dataset informations
+        rep = "Kitti-Dataset" \
+              "Type: {}, Length: {}, Seq.length: {}\n" \
+              "Date\tDrive\tlength\tstart-end\n".format(self.ds_type, self.length, self.seq_size)
+        seqs = ""
+        for i in range(len(self.length_each_drive)):
+            date = self.datasets[i].date
+            drive = self.datasets[i].drive
+            length = self.length_each_drive[i]
+            bins = self.bins[i]
+            seqs = "".join("{}{}\t{}\t{}\t{}\n".format(seqs, date, drive, length, bins))
+        rep = "{}{}".format(rep,seqs)
+        return rep
