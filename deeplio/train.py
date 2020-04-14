@@ -99,7 +99,7 @@ class Trainer:
         self.model = net.DeepLIOS0(input_shape=(self.n_channels, self.im_height, self.im_width), p=0)
         self.model.to(self.device)
 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self.args.lr)
         self.criterion = GeoConstLoss()
 
         self.tensor_writer = tensorboard.SummaryWriter(log_dir=runs_dir)
@@ -112,8 +112,8 @@ class Trainer:
         self.logger.print(self.model.repr())
 
         imgs = torch.randn((2, 3, self.n_channels, self.im_height, self.im_width)).to(self.device)
+        self.model.eval()
         self.logger.print(summary(self.model, imgs))
-
         self.tensor_writer.add_graph(self.model, imgs)
 
     def train(self):
@@ -129,7 +129,7 @@ class Trainer:
 
             # remember best acc and save checkpoint
             is_best = acc < self.best_acc
-            best_acc = min(acc, self.best_acc)
+            self.best_acc = min(acc, self.best_acc)
 
             self.save_checkpoint({
                 'epoch': epoch + 1,
@@ -353,18 +353,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DeepLIO Training')
 
     # Hyper Params
-    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
-                        help='number of data loading workers (default: 4)')
-    parser.add_argument('--epochs', default=5, type=int, metavar='N',
-                        help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                         help='manual epoch number (useful on restarts)')
-    parser.add_argument('-b', '--batch-size', default=4, type=int,
-                        metavar='N',
-                        help='mini-batch size (default: 256), this is the total '
-                             'batch size of all GPUs on the current node when '
-                             'using Data Parallel or Distributed Data Parallel')
-    parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
+    parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float,
                         metavar='LR', help='initial learning rate', dest='lr')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                         help='momentum')

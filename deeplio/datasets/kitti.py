@@ -269,7 +269,7 @@ class Kitti(data.Dataset):
                 break
 
         if idx < 0 or num_drive < 0:
-            print("Error: No bins and no drive number found!")
+            self.logger.error("Error: No bins and no drive number found!")
             return None
 
         dataset = self.datasets[num_drive]
@@ -301,7 +301,7 @@ class Kitti(data.Dataset):
             len_oxt = len(oxt_indices)
 
             if (len_oxt== 0) or (len_oxt < self.MIN_NUM_OXT_SAMPLES):
-                self.logger.warning("Not enough OXT-samples: Index: {}, DS: {}_{}, len:{}, velo-timestamps: {}-{}".format(index, dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
+                self.logger.debug("Not enough OXT-samples: Index: {}, DS: {}_{}, len:{}, velo-timestamps: {}-{}".format(index, dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
                 tmp_imu = np.zeros((self.seq_size - 1, self.MAX_NUM_OXT_SAMPLES, 6))
                 tmp_gt = np.zeros((self.seq_size - 1, self.MAX_NUM_OXT_SAMPLES, 4, 4))
                 items = [images, tmp_imu, tmp_gt]

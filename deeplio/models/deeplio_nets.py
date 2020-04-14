@@ -134,6 +134,10 @@ class DeepLIOS0(nn.Module):
                 nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
                 nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
                 nn.ReLU(True),
+
+                nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
+                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
+                nn.ReLU(True),
             )
         return net
 
@@ -143,13 +147,23 @@ class DeepLIOS0(nn.Module):
         imgs_0 = images[0]
         imgs_1 = images[1]
 
+        # outs = []
+        # length = imgs_0.shape[0]
+        # for i in range(length):
+        #     im0, im1 = imgs_0[i:i+1], imgs_1[i:i+1]
+        #     res0 = self.siamese_net(im0)
+        #     res1 = self.siamese_net(im1)
+        #     res0 = res0.view(-1, self.num_flat_features(res0))
+        #     res1 = res1.view(-1, self.num_flat_features(res1))
+        #     outs.append(res0 - res1)
+        # out = torch.stack(outs).squeeze()
+
         out_0 = self.siamese_net(imgs_0)
         out_1 = self.siamese_net(imgs_1)
-
         out_0 = out_0.view(-1, self.num_flat_features(out_0))
         out_1 = out_1.view(-1, self.num_flat_features(out_1))
+        out = torch.abs(out_1 - out_0)
 
-        out = out_1 - out_0
         out = F.relu(self.fc1(out))
         out = F.relu(self.fc2(out))
         out = F.relu(self.fc3(out))
