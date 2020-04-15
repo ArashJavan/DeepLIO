@@ -76,9 +76,10 @@ class Trainer:
         self.n_channels = len(self.cfg['channels'])
 
         # create output folder structure
-        self.checkpoint_dir = "{}/ouputs/checkpoints".format(self.content_dir)
-        runs_dir = "{}/ouputs/runs/{}".format(self.content_dir, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
-        log_dir = "{}/ouputs/logs".format(self.content_dir)
+        self.out_dir = "{}/outputs/train_{}".format(self.content_dir,  datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+        self.checkpoint_dir = self.out_dir
+        runs_dir = "{}/outputs/runs/{}".format(self.content_dir,  datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+        log_dir = self.checkpoint_dir
         Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
         Path(runs_dir).mkdir(parents=True, exist_ok=True)
         Path(log_dir).mkdir(parents=True, exist_ok=True)
@@ -222,7 +223,7 @@ class Trainer:
 
                 # update tensorboard
                 step_val = epoch * len(self.train_dataloader) + idx
-                self.tensor_writer.add_scalars("Loss", {'train': losses.avg}, step_val)
+                self.tensor_writer.add_scalar("Loss train", losses.avg, step_val)
                 imgs = data['images'].reshape(self.batch_size * self.seq_size,
                                               self.n_channels, self.im_height, self.im_width)
                 imgs_remossion = imgs[:, 0:1, :, :]
@@ -295,7 +296,7 @@ class Trainer:
 
                     # update tensorboard
                     step_val = epoch * len(self.train_dataloader) + idx
-                    self.tensor_writer.add_scalars("Loss", {'val': losses.avg}, step_val)
+                    self.tensor_writer.add_scalars("Loss val", losses.avg, step_val)
                     imgs = data['images'].reshape(self.batch_size * self.seq_size,
                                                   self.n_channels, self.im_height, self.im_width)
                     imgs_remossion = imgs[:, 0:1, :, :]
