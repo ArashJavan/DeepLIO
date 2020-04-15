@@ -296,7 +296,7 @@ class Trainer:
 
                     # update tensorboard
                     step_val = epoch * len(self.train_dataloader) + idx
-                    self.tensor_writer.add_scalars("Loss val", losses.avg, step_val)
+                    self.tensor_writer.add_scalar("Loss val", losses.avg, step_val)
                     imgs = data['images'].reshape(self.batch_size * self.seq_size,
                                                   self.n_channels, self.im_height, self.im_width)
                     imgs_remossion = imgs[:, 0:1, :, :]
