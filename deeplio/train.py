@@ -76,10 +76,10 @@ class Trainer:
         self.n_channels = len(self.cfg['channels'])
 
         # create output folder structure
-        checkpoint_dir = "{}/ouputs/checkpoints".format(self.content_dir)
-        runs_dir = "{}/ouputs/runs".format(self.content_dir)
+        self.checkpoint_dir = "{}/ouputs/checkpoints".format(self.content_dir)
+        runs_dir = "{}/ouputs/runs/{}".format(self.content_dir, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
         log_dir = "{}/ouputs/logs".format(self.content_dir)
-        Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
         Path(runs_dir).mkdir(parents=True, exist_ok=True)
         Path(log_dir).mkdir(parents=True, exist_ok=True)
 
@@ -141,15 +141,14 @@ class Trainer:
             # train for one epoch
             self.train_data(epoch)
 
-            acc = self.validate()
+            acc = self.validate(epoch)
 
             # remember best acc and save checkpoint
             is_best = acc < self.best_acc
             self.best_acc = min(acc, self.best_acc)
 
             self.save_checkpoint({
-                'epoch': epoch + 1,
-                'arch': args.arch,
+                'epoch': epoch,
                 'state_dict': self.model.state_dict(),
                 'best_acc1': self.best_acc,
                 'optimizer' : self.optimizer.state_dict(),
@@ -223,7 +222,7 @@ class Trainer:
 
                 # update tensorboard
                 step_val = epoch * len(self.train_dataloader) + idx
-                self.tensor_writer.add_scalar("Loss", losses.avg, step_val)
+                self.tensor_writer.add_scalars("Loss", {'train': losses.avg}, step_val)
                 imgs = data['images'].reshape(self.batch_size * self.seq_size,
                                               self.n_channels, self.im_height, self.im_width)
                 imgs_remossion = imgs[:, 0:1, :, :]
@@ -242,7 +241,7 @@ class Trainer:
                     self.tensor_writer.add_histogram(tag, param.grad.detach().cpu().numpy(), step_val)
                 self.tensor_writer.flush()
 
-    def validate(self):
+    def validate(self, epoch):
         writer = self.tensor_writer
         optimizer = self.optimizer
         criterion = self.criterion
@@ -296,7 +295,7 @@ class Trainer:
 
                     # update tensorboard
                     step_val = epoch * len(self.train_dataloader) + idx
-                    self.tensor_writer.add_scalar("Loss", losses.avg, step_val)
+                    self.tensor_writer.add_scalars("Loss", {'val': losses.avg}, step_val)
                     imgs = data['images'].reshape(self.batch_size * self.seq_size,
                                                   self.n_channels, self.im_height, self.im_width)
                     imgs_remossion = imgs[:, 0:1, :, :]
@@ -317,10 +316,13 @@ class Trainer:
                     self.tensor_writer.flush()
         return losses.avg
 
-    def save_checkpoint(self, state, is_best, filename='checkpoint.pth.tar'):
+    def save_checkpoint(self, state, is_best):
+        epoch = state['epoch']
+        filename = '{}/cpkt_{}_{}.tar'.format(self.checkpoint_dir, epoch, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
         torch.save(state, filename)
         if is_best:
-            shutil.copyfile(filename, "model_best.pth.tar")
+            filename_best = '{}/cpkt_best_{}_{}.tar'.format(self.checkpoint_dir, epoch, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+            shutil.copyfile(filename, filename_best)
 
     def adjust_learning_rate(self, epoch):
         """Sets the learning rate to the niital LR decayed by 10 every 10 epochs """
