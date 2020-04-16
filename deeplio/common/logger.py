@@ -59,5 +59,8 @@ class PyLogger(object):
     def print(self, msg, *args, **kwargs):
         self.__logger.info(msg, *args)
 
+    def close(self):
+        logging.shutdown()
+
 
 global_logger = None

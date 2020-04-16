@@ -5,6 +5,7 @@ import time
 import datetime
 import shutil
 import argparse
+import signal
 from pathlib import Path
 
 import numpy as np
@@ -133,9 +134,17 @@ class Trainer:
         self.model.eval()
         self.logger.print(summary(self.model, imgs))
         self.tensor_writer.add_graph(self.model, imgs)
+        self.run = False
 
     def train(self):
+        self.run = True
+
         for epoch in range(self.epochs):
+
+            # check if we can run or are we stopped
+            if not self.run:
+                break
+
             lr = self.adjust_learning_rate(epoch)
             self.logger.info("Starting epoch:{}, lr:{}".format(epoch, lr))
 
@@ -155,8 +164,8 @@ class Trainer:
                 'optimizer' : self.optimizer.state_dict(),
             }, is_best)
 
-        self.tensor_writer.close()
         self.logger.info("Training done!")
+        self.close()
 
     def train_data(self, epoch):
         writer = self.tensor_writer
@@ -178,7 +187,13 @@ class Trainer:
             prefix="Epoch: [{}]".format(epoch))
 
         end = time.time()
+        data_last = None
+        step_val = 0.
         for idx, data in enumerate(self.train_dataloader):
+
+            # check if we can run or are we stopped
+            if not self.run:
+                break
 
             # measure data loading time
             data_time.update(time.time() - end)
@@ -224,23 +239,26 @@ class Trainer:
                 # update tensorboard
                 step_val = epoch * len(self.train_dataloader) + idx
                 self.tensor_writer.add_scalar("Loss train", losses.avg, step_val)
-                imgs = data['images'].reshape(self.batch_size * self.seq_size,
-                                              self.n_channels, self.im_height, self.im_width)
-                imgs_remossion = imgs[:, 0:1, :, :]
-                imgs_remossion = [torch.from_numpy(colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
-                imgs_remossion = torch.stack(imgs_remossion)
-                imgs_remossion = make_grid(imgs_remossion, nrow=2)
-                self.tensor_writer.add_image("Image remissions", imgs_remossion, global_step=step_val)
-
-                imgs_depth = imgs[:, 1:2, :, :]
-                imgs_depth = [torch.from_numpy(colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_depth]
-                imgs_depth = torch.stack(imgs_depth)
-                imgs_depth = make_grid(imgs_depth, nrow=2)
-                self.tensor_writer.add_image("Image depth", imgs_depth, global_step=step_val)
-
-                for tag, param in self.model.named_parameters():
-                    self.tensor_writer.add_histogram(tag, param.grad.detach().cpu().numpy(), step_val)
                 self.tensor_writer.flush()
+            data_last = data
+
+        # save infos to -e.g. gradient hists and images to tensorbaord and the end of training
+        b, s, c, h, w = np.asarray(data_last['images'].shape)
+        imgs = data_last['images'].reshape(b*s, self.n_channels, self.im_height, self.im_width)
+        imgs_remossion = imgs[:, 0:1, :, :]
+        imgs_remossion = [torch.from_numpy(colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
+        imgs_remossion = torch.stack(imgs_remossion)
+        imgs_remossion = make_grid(imgs_remossion, nrow=2)
+        self.tensor_writer.add_image("Image remissions", imgs_remossion, global_step=step_val)
+
+        imgs_depth = imgs[:, 1:2, :, :]
+        imgs_depth = [torch.from_numpy(colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_depth]
+        imgs_depth = torch.stack(imgs_depth)
+        imgs_depth = make_grid(imgs_depth, nrow=2)
+        self.tensor_writer.add_image("Image depth", imgs_depth, global_step=step_val)
+
+        for tag, param in self.model.named_parameters():
+            self.tensor_writer.add_histogram(tag, param.grad.detach().cpu().numpy(), step_val)
 
     def validate(self, epoch):
         writer = self.tensor_writer
@@ -262,7 +280,12 @@ class Trainer:
         with torch.no_grad():
             end = time.time()
             for idx, data in enumerate(self.val_dataloader):
-                # skip invalid data without ground-truth
+
+                # check if we can run or are we stopped
+                if not self.run:
+                    break
+
+                    # skip invalid data without ground-truth
                 if not torch.all(data['valid']):
                     continue
 
@@ -293,27 +316,9 @@ class Trainer:
 
                 if idx % args.print_freq == 0:
                     progress.display(idx)
-
                     # update tensorboard
-                    step_val = epoch * len(self.train_dataloader) + idx
+                    step_val = epoch * len(self.val_dataloader) + idx
                     self.tensor_writer.add_scalar("Loss val", losses.avg, step_val)
-                    imgs = data['images'].reshape(self.batch_size * self.seq_size,
-                                                  self.n_channels, self.im_height, self.im_width)
-                    imgs_remossion = imgs[:, 0:1, :, :]
-                    imgs_remossion = [torch.from_numpy(colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
-                    imgs_remossion = torch.stack(imgs_remossion)
-                    imgs_remossion = make_grid(imgs_remossion, nrow=2)
-                    self.tensor_writer.add_image("Image remissions", imgs_remossion, global_step=step_val)
-
-                    imgs_depth = imgs[:, 1:2, :, :]
-                    imgs_depth = [torch.from_numpy(colorize(img, cmap='viridis')).permute(2, 0, 1) for img in
-                                  imgs_depth]
-                    imgs_depth = torch.stack(imgs_depth)
-                    imgs_depth = make_grid(imgs_depth, nrow=2)
-                    self.tensor_writer.add_image("Image depth", imgs_depth, global_step=step_val)
-
-                    for tag, param in self.model.named_parameters():
-                        self.tensor_writer.add_histogram(tag, param.grad.detach().cpu().numpy(), step_val)
                     self.tensor_writer.flush()
         return losses.avg
 
@@ -322,15 +327,25 @@ class Trainer:
         filename = '{}/cpkt_{}_{}.tar'.format(self.checkpoint_dir, epoch, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
         torch.save(state, filename)
         if is_best:
-            filename_best = '{}/cpkt_best_{}_{}.tar'.format(self.checkpoint_dir, epoch, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+            filename_best = '{}/cpkt_best_{}.tar'.format(self.checkpoint_dir, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
             shutil.copyfile(filename, filename_best)
 
     def adjust_learning_rate(self, epoch):
         """Sets the learning rate to the niital LR decayed by 10 every 10 epochs """
-        lr = self.args.lr * (0.1 ** (epoch // 10))
+        lr = self.args.lr * (0.1 ** (epoch // 5))
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
         return lr
+
+    def close(self):
+        self.logger.info("Stopping training!")
+        self.run = False
+
+        # give some times to porcesses and loops to finish
+        time.sleep(0.5)
+
+        self.tensor_writer.close()
+        self.logger.close()
 
 
 class AverageMeter(object):
@@ -391,6 +406,14 @@ class ProgressMeter(object):
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
 
+def signal_handler(signum, frame):
+    if trainer is not None:
+        trainer.close()
+    sys.stdout.flush()
+    sys.exit(1)
+
+trainer = None
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DeepLIO Training')
 
@@ -424,8 +447,12 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    signal.signal(signal.SIGINT, signal_handler)
+
     trainer = Trainer(args)
     trainer.train()
+
+    print("Done!")
 
 
 
