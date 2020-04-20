@@ -61,7 +61,7 @@ class Worker:
         # create output folder structure
         self.out_dir = "{}/outputs/{}_{}".format(self.content_dir, self.ACTION, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
 
-        self.runs_dir = "{}/outputs/{}/runs/{}".format(self.content_dir, self.ACTION, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+        self.runs_dir = "{}/outputs/{}_runs/{}".format(self.content_dir, self.ACTION, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
         log_dir = self.out_dir
         Path(self.runs_dir).mkdir(parents=True, exist_ok=True)
         Path(log_dir).mkdir(parents=True, exist_ok=True)

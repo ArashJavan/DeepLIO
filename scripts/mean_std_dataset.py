@@ -60,8 +60,9 @@ def main(args):
     print("mean-and-std-dataset: Mean and std-deviation of "
           "cylindrical projected KITTI Lidar Frames.\n args: {}".format(args))
 
-    ds_config = config['datasets']['kitti']
-    root_path = ds_config['root-path']
+    ds_config = config['datasets']
+    kitti_config = ds_config['kitti']
+    root_path = kitti_config['root-path']
 
     ds_type = "train"
     num_channels = len(CHANNEL_NAMES)
@@ -78,8 +79,12 @@ def main(args):
 
     channel_hist = [[] for i in range(num_channels)]
 
-    datasets = [KittiRawData(root_path, str(date), str(drive), ds_config) for date, drives in ds_config[ds_type].items()
-                for drive in drives]
+    datasets = []
+    for date, drives in kitti_config[ds_type].items():
+        for drive in drives:
+            date = str(date).replace('-', '_')
+            drive = '{0:04d}'.format(drive)
+            datasets.append(KittiRawData(root_path, date, drive, ds_config))
     n_worker = len(datasets)
     counters = list(range(n_worker))
 
@@ -111,9 +116,9 @@ def main(args):
                                                                                           channel_mean[j],
                                                                                           channel_std[j]))
         fig.tight_layout()
-        fig.savefig("../histogram_mean_and_std.png")
+        fig.savefig("./histogram_mean_and_std.png")
 
-    with open("../mean_and_std.txt", 'w') as f:
+    with open("./mean_and_std.txt", 'w') as f:
         f.write("mean: {}\nstd: {}".format(channel_mean, channel_std))
 
     print("mean: {}".format(channel_mean))

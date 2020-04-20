@@ -23,7 +23,7 @@ class KittiRawData:
     MAX_DIST_HDL64 = 120.
     IMU_LENGTH = 10.25
 
-    def __init__(self, base_path, date, drive, cfg=None, oxts_bin=False, oxts_txt=True, **kwargs):
+    def __init__(self, base_path, date, drive, cfg=None, oxts_bin=False, oxts_txt=False, **kwargs):
         self.drive = drive
         self.date = date
         self.dataset = kwargs.get('dataset', 'extract')

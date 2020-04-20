@@ -1,8 +1,8 @@
 datasets:
-    sequence-size: 4 # must be >= 2
+    sequence-size: 3 # must be >= 2
     kitti:
       root-path: "/media/ajava/Data/Datasets/KITTI/"
-      image-width: 1440
+      image-width: 1800
       image-height: 64
       fov-up: 3.
       fov-down: -25.

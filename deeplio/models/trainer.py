@@ -274,7 +274,7 @@ class Trainer(Worker):
 
                 # prepare ground truth tranlational and rotational part
                 gt_pos = gts[:, :3, 3].contiguous()
-                gt_rot = utils.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
+                gt_rot = spatial.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
                 gts = [gt_pos, gt_rot]
 
                 # compute model predictions and loss
