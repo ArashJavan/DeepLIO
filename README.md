@@ -1,6 +1,8 @@
 # DeepLIO
 __Deep Lidar Inertial Odometry__
 
+#### !!!This repo is under heavy development at the moment!!!
+
 1. Intorduction
 
 DeepLIO is an deep learning based odometry estimation using lidar and IMU. 
