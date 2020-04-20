@@ -1,15 +1,13 @@
 import torch
-import torchvision.transforms.functional as F
 
-import time
 
 class ToTensor:
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, data):
         images = torch.stack(data[0]).permute(0, 3, 1, 2)
-        imus = torch.FloatTensor(data[1])
-        gts = torch.FloatTensor(data[2])
+        imus = [torch.FloatTensor(d) for d in data[1]]
+        gts = [torch.FloatTensor(d) for d in data[2]]
         return images, imus, gts
 
 

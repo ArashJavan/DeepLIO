@@ -1,9 +1,4 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-from deeplio.models.squeeze_net import *
-
+from .squeeze_net import *
 
 class DeepLIOS3(nn.Module):
     """
@@ -110,7 +105,7 @@ class DeepLIOS0(nn.Module):
         self.fc3 = nn.Linear(64, 16)
 
         self.fc_pos = nn.Linear(16, 3)
-        #self.fc_ori = nn.Linear(64, 4)
+        self.fc_ori = nn.Linear(16, 4)
 
     def create_inner_net(self, channels):
         net = nn.Sequential(
@@ -129,6 +124,10 @@ class DeepLIOS0(nn.Module):
                 nn.ReLU(True),
 
                 nn.Conv2d(64, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
+                nn.ReLU(True),
+
+                nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
+                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
                 nn.ReLU(True),
 
                 nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
@@ -169,8 +168,8 @@ class DeepLIOS0(nn.Module):
         out = F.relu(self.fc3(out))
 
         pos = self.fc_pos(out)
-        #ori = torch.zeros((1, 3), requires_grad=False) #self.fc_ori(out)
-        return pos
+        ori = self.fc_ori(out)
+        return pos, ori
 
     def num_flat_features(self, x):
         size = x.size()[1:]  # all dimensions except the batch dimension

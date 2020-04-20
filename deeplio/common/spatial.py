@@ -1,6 +1,9 @@
 """
-borrowed from https://kornia.github.io//
+borrowed partly from https://kornia.github.io//
 """
+
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -524,3 +527,23 @@ def angle_axis_to_quaternion(angle_axis: torch.Tensor) -> torch.Tensor:
     quaternion[..., 1:2] += a1 * k
     quaternion[..., 2:3] += a2 * k
     return torch.cat([w, quaternion], dim=-1)
+
+
+def inv_SE3(T):
+    r"""Calculates the inverse of an SE(3) matrix
+    :param T:
+    :return:
+    """
+    if isinstance(T, torch.Tensor):
+        eye = torch.eye
+        matmul = torch.matmul
+    else:
+        eye = np.eye
+        matmul = np.matmul
+
+    R = T[:3, :3]
+    t = T[:3, 3]
+    T_inv = eye(4)
+    T_inv[:3, :3] = R.T
+    T_inv[:3, 3] = -matmul(R.T, t)
+    return T_inv

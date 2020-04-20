@@ -181,7 +181,6 @@ class Kitti(data.Dataset):
     # e.g. there is no corresponding IMU/GPS measurment to some velodyne frames,
     # We set the min. no. so we can check and ignore these holes.
     MIN_NUM_OXT_SAMPLES = 8
-    MAX_NUM_OXT_SAMPLES = 10
 
     def __init__(self, config, ds_type='train', transform=None):
         """
@@ -302,38 +301,32 @@ class Kitti(data.Dataset):
 
             if (len_oxt== 0) or (len_oxt < self.MIN_NUM_OXT_SAMPLES):
                 self.logger.debug("Not enough OXT-samples: Index: {}, DS: {}_{}, len:{}, velo-timestamps: {}-{}".format(index, dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
-                tmp_imu = np.zeros((self.seq_size - 1, self.MAX_NUM_OXT_SAMPLES, 6))
-                tmp_gt = np.zeros((self.seq_size - 1, self.MAX_NUM_OXT_SAMPLES, 4, 4))
+                tmp_imu = np.zeros((self.seq_size - 1, self.MIN_NUM_OXT_SAMPLES, 6))
+                tmp_gt = np.zeros((self.seq_size - 1, self.MIN_NUM_OXT_SAMPLES, 4, 4))
                 items = [images, tmp_imu, tmp_gt]
                 if self.transform:
                     items = self.transform(items)
-                data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': False}
+                data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': False, 'meta': [0]}
                 return data
             else:
+                oxts_timestamps = dataset.timestamps_imu[oxt_indices]
                 oxts = dataset.oxts[oxt_indices]
                 imu_values = np.array([[oxt[0].ax, oxt[0].ay, oxt[0].az, oxt[0].wx, oxt[0].wy, oxt[0].wz] for oxt in oxts])
                 gt = np.array([oxt[1] for oxt in oxts])
-
-                # TODO we need a customized dataloader (maybe ccollate_fn-func) so we do not need to expand or crop here
-                if len_oxt > self.MAX_NUM_OXT_SAMPLES:
-                    imu_values = imu_values[:self.MAX_NUM_OXT_SAMPLES]
-                    gt = gt[:self.MAX_NUM_OXT_SAMPLES]
-                    #self.logger.info("Cutting OXT-Samples: Index: {}, length:{},  velo-timestamps: {}-{})".format(index, len_oxt, velo_start_ts, velo_stop_ts))
-                elif len_oxt < self.MAX_NUM_OXT_SAMPLES:
-                    imu_values = np.pad(imu_values, ((0, self.MAX_NUM_OXT_SAMPLES - len_oxt), (0, 0)), constant_values=0.)
-                    gt = np.pad(gt, ((0, self.MAX_NUM_OXT_SAMPLES - len_oxt), (0, 0), (0, 0)), mode='edge')
-                    #self.logger.info("Padding OXT-Samples: Index: {}, length:{},  velo-timestamps: {}-{}".format(index, len_oxt, velo_start_ts, velo_stop_ts))
 
                 imus.append(imu_values)
                 gts.append(gt)
 
         items = [images, imus, gts]
 
+        meta_data = {'index': [index], 'date': [dataset.date], 'drive': [dataset.drive], 'velo-index': [indices],
+                     'velo-timestamps': [ts.timestamp() for ts in velo_timespamps],
+                     'oxts-timestamps': [ts.timestamp() for ts in oxts_timestamps]}
 
         if self.transform:
              items = self.transform(items)
 
-        data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': True}
+        data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': True, 'meta': meta_data}
 
         end = time.time()
         #self.logger.debug("Idx:{}, dt: {}".format(index, end - start))

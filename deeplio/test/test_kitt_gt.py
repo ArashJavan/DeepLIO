@@ -1,26 +1,26 @@
 import os
-import random
+import sys
 import yaml
 import argparse
 import multiprocessing
 
-import torch
 from torchvision import transforms
 from torch.utils import tensorboard
 
-from deeplio.datasets import kitti
-from deeplio.datasets import transfromers
+
+dname = os.path.abspath(os.path.dirname(__file__))
+content_dir = os.path.abspath("{}/..".format(dname))
+sys.path.append(dname)
+sys.path.append(content_dir)
+
+from deeplio import datasets as ds
 from deeplio.common.utils import *
 from deeplio.models.misc import *
+from deeplio.models.worker import Worker, worker_init_fn
 from deeplio.visualization.utilities import *
 
 
 import matplotlib.pyplot as plt
-
-SEED = 42
-
-def worker_init_fn(worker_id):
-    set_seed(seed=42)
 
 
 def plot_images(images):
@@ -41,28 +41,17 @@ def draw_registration_result(source, target, transformation):
     o3d.visualization.draw_geometries([source_temp, target_temp])
 
 
-class TestKittiGt:
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.batch_size = self.cfg['batch-size']
-
-        self.ds_cfg = self.cfg['datasets']
-        self.seq_size = self.ds_cfg['sequence-size']
-
-        self.curr_dataset_cfg = self.cfg['datasets'][self.cfg['current-dataset']]
-
-        # For this test wen need all channels, no mather what is configured originally
-        cfg['channels'] = [0, 1, 2, 3, 4, 5]
-
-        set_seed(SEED)
-
-        num_workers = multiprocessing.cpu_count()
-        transform = transforms.Compose([transfromers.ToTensor()])
-        dataset = kitti.Kitti(config=cfg, transform=transform)
+class TestKittiGt(Worker):
+    ACTION="kitti-ds-tester"
+    def __init__(self, parser):
+        super(TestKittiGt, self).__init__(parser)
+        transform = transforms.Compose([ds.ToTensor()])
+        dataset = ds.Kitti(config=self.cfg, transform=transform)
         self.train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size,
-                                                            num_workers=num_workers,
+                                                            num_workers=self.num_workers,
                                                             shuffle=True,
-                                                            worker_init_fn = worker_init_fn)
+                                                            worker_init_fn = worker_init_fn,
+                                                            collate_fn = ds.deeplio_collate)
 
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size)
 
@@ -79,7 +68,7 @@ class TestKittiGt:
             imgs_0 = imgs_0.numpy()
             imgs_1 = imgs_1.numpy()
             gts = gts.numpy()
-            imus = [imu.numpy() for imu in imus]
+            #imus = [imu.numpy() for imu in imus]
 
             for i in range(len(imgs_0)):
                 im_trgt = imgs_0[i].transpose(1, 2, 0)
@@ -109,15 +98,22 @@ class TestKittiGt:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DeepLIO Training')
-    parser.add_argument('-c', '--config', default="../config.yaml", help='Path to configuration file')
+    parser.add_argument('-c', '--config', default="./config.yaml", help='Path to configuration file')
 
-    args = vars(parser.parse_args())
+    parser.add_argument('-j', '--workers', default=0, type=int, metavar='N',
+                        help='number of data loading workers (default: 4)')
+    parser.add_argument('--epochs', default=1, type=int, metavar='N',
+                        help='number of total epochs to run')
+    parser.add_argument('-b', '--batch-size', default=1, type=int,
+                        metavar='N',
+                        help='mini-batch size (default: 1), this is the total '
+                             'batch size of all GPUs on the current node when '
+                             'using Data Parallel or Distributed Data Parallel')
+    parser.add_argument('-d', '--debug', default=False, help='debug logging', action='store_true', dest='debug')
 
-    with open(args['config']) as f:
-        cfg = yaml.safe_load(f)
 
     np.set_printoptions(precision=3, suppress=True)
-    kitti_gt_test = TestKittiGt(cfg)
+    kitti_gt_test = TestKittiGt(parser)
     kitti_gt_test.run()
     print("Done!")
 
