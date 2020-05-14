@@ -187,10 +187,10 @@ class Trainer(Worker):
 
             # prepare data
             imgs_0, imgs_1,  imgs_untrans_0, imgs_untrans_1, gts, imus = self.post_processor(data)
-            imgs_0 = imgs_0[:, 3:5, :, :] #x, y, z, remission, rangexyz, rangexy
-            imgs_1 = imgs_1[:, 3:5, :, :]
 
             # send data to device
+            imgs_0 = imgs_0[:, 3:5, :, :] #x, y, z, remission, rangexyz, rangexy
+            imgs_1 = imgs_1[:, 3:5, :, :]
             imgs_0 = imgs_0.to(self.device, non_blocking=True)
             imgs_1 = imgs_1.to(self.device, non_blocking=True)
 
@@ -233,21 +233,21 @@ class Trainer(Worker):
 
         # save infos to -e.g. gradient hists and images to tensorbaord and the end of training
         b, s, c, h, w = np.asarray(data_last['images'].shape)
-        imgs = data_last['images'].reshape(b*s, self.n_channels, self.im_height, self.im_width)
-        imgs_remossion = imgs[:, 0:1, :, :]
+        imgs = data_last['images'][:, :, 3:].reshape(b*s, 2, h, w)
+        imgs_remossion = imgs[:, 1, :, :]
         imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
         imgs_remossion = torch.stack(imgs_remossion)
         imgs_remossion = make_grid(imgs_remossion, nrow=2)
         self.tensor_writer.add_image("Images/Remissions", imgs_remossion, global_step=step_val)
 
-        imgs_depth = imgs[:, 1:2, :, :]
-        imgs_depth = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_depth]
-        imgs_depth = torch.stack(imgs_depth)
-        imgs_depth = make_grid(imgs_depth, nrow=2)
-        self.tensor_writer.add_image("Images/Range", imgs_depth, global_step=step_val)
+        imgs_range = imgs[:, 0, :, :]
+        imgs_range = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_range]
+        imgs_range = torch.stack(imgs_range)
+        imgs_range = make_grid(imgs_range, nrow=2)
+        self.tensor_writer.add_image("Images/Range", imgs_range, global_step=step_val)
 
         for tag, param in self.model.named_parameters():
-            self.tensor_writer.add_histogram(tag, param.grad.detach().cpu().numpy(), step_val)
+            self.tensor_writer.add_histogram(tag, param.data.detach().cpu().numpy(), step_val)
 
     def validate(self, epoch):
         writer = self.tensor_writer
@@ -278,9 +278,12 @@ class Trainer(Worker):
                     continue
 
                 # prepare data
-                imgs_0, imgs_1, gts, imus = self.post_processor(data)
+                imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, gts, imus = self.post_processor(data)
 
                 # send data to device
+                imgs_0 = imgs_0[:, 3:5, :, :]  # x, y, z, remission, rangexyz, rangexy
+                imgs_1 = imgs_1[:, 3:5, :, :]
+
                 imgs_0 = imgs_0.to(self.device, non_blocking=True)
                 imgs_1 = imgs_1.to(self.device, non_blocking=True)
                 gts = gts.to(self.device, non_blocking=True)
@@ -289,14 +292,13 @@ class Trainer(Worker):
                 # prepare ground truth tranlational and rotational part
                 gt_pos = gts[:, :3, 3].contiguous()
                 gt_rot = spatial.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
-                gts = [gt_pos, gt_rot]
 
                 # compute model predictions and loss
-                preds = model([imgs_0, imgs_1])
-                loss = criterion(preds, gts)
+                pred_x, pred_q = model([imgs_0, imgs_1])
+                loss = criterion(pred_x, pred_q, gt_pos, gt_rot)
 
                 # measure accuracy and record loss
-                losses.update(loss.detach().item(), len(preds))
+                losses.update(loss.detach().item(), len(pred_x))
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)
@@ -313,7 +315,7 @@ class Trainer(Worker):
 
     def save_checkpoint(self, state, is_best):
         epoch = state['epoch']
-        filename = '{}/cpkt_{}_{}_{}.tar'.format(self.model.name, self.checkpoint_dir, epoch, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+        filename = '{}/cpkt_{}_{}_{}.tar'.format(self.checkpoint_dir, self.model.name, epoch, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
         torch.save(state, filename)
         if is_best:
             filename_best = '{}/cpkt_{}_best.tar'.format(self.checkpoint_dir, self.model.name)
