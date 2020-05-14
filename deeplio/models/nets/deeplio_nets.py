@@ -156,6 +156,11 @@ class DeepLIOS0(BaseNet):
                 nn.BatchNorm2d(128),
                 nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
                 nn.ReLU(True),
+
+                nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
+                nn.BatchNorm2d(128),
+                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
+                nn.ReLU(True),
             )
         return net
 

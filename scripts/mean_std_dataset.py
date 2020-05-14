@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 
 from deeplio.datasets import KittiRawData
 
-CHANNEL_NAMES = ['x', 'y', 'z', 'remission', 'rang', 'depth']
+CHANNEL_NAMES = ['x', 'y', 'z', 'rang', 'remission']
 PIVOT = 200
 
 
@@ -40,7 +40,7 @@ def run_job(args):
 
     for i in tqdm.trange(length, desc=dataset.data_path, position=bar_pos):
         im = dataset.get_velo_image(i)
-        im_channels = im.reshape(-1, 6).T
+        im_channels = im.reshape(-1, num_channels).T
         pixel_num += (im.size / num_channels)
         channel_sum += np.sum(im_channels, axis=1)
         channel_sum_squared += np.sum(np.square(im_channels), axis=1)

@@ -1,5 +1,5 @@
 datasets:
-    sequence-size: 4 # must be >= 2
+    sequence-size: 3 # must be >= 2
     kitti:
       root-path: "/media/ajava/Data/Datasets/KITTI/"
       image-width: 1800
@@ -17,8 +17,9 @@ datasets:
       validation:
         2011-09-26: [32, 46]
 
-      mean: [-0.0603, 0.4164, -0.8617, 0.6742, 0.2177] # channesl: x, y, z, range(x,y,z), remissions)
-      std: [10.0626, 7.5048, 0.8758, 0.3923, 0.1745]
+      # channesl: x, y, z, range(x,y,z), remissions)
+      mean: [-0.05815086, 0.416526, -0.85854134, 8.25940242, 0.216429  ]
+      std: [10.03660669, 7.49360111, 0.8761208, 9.50562911, 0.17403938]
 
 arch:
   name: "deeplio3"
@@ -30,7 +31,6 @@ arch:
     model-path: "resources/checkpoint_30_20200504_161441.tar"
     dropout: 0.25
     classes: ['unknown', 'car', 'pedestrian', 'cyclist']
-
 
 current-dataset: 'kitti'
 channels: [3, 4] # channesl: x=0, y=1, z=2, range(x,y,z)=3, remissions=4

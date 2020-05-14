@@ -72,9 +72,6 @@ class KittiRawData:
         proj_xyz = scan.proj_xyz
         proj_remission = scan.proj_remission
         proj_range = scan.proj_range
-        #proj_range_xy = scan.proj_range_xy
-
-        # get unprojected data (with the max num points)
 
         image = np.dstack((proj_xyz, proj_range, proj_remission))
         return image

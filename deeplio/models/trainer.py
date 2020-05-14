@@ -12,7 +12,9 @@ import torch.utils.data
 from torchvision import transforms
 from torch import optim
 from torchvision.utils import make_grid
-from torch.utils import tensorboard
+
+import tensorboardX
+from tensorboardX import SummaryWriter
 
 from pytorch_model_summary import summary
 
@@ -73,7 +75,7 @@ class Trainer(Worker):
         self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=20, gamma=0.1)
         self.criterion = LWSLoss(beta=1125.)
 
-        self.tensor_writer = tensorboard.SummaryWriter(log_dir=self.runs_dir)
+        self.tensor_writer = SummaryWriter(log_dir=self.runs_dir)
 
         # debugging and visualizing
         self.logger.print("DeepLIO Training Configurations:")
@@ -159,6 +161,7 @@ class Trainer(Worker):
         batch_time = AverageMeter('Time', ':6.3f')
         data_time = AverageMeter('Data', ':6.3f')
         losses = AverageMeter('Loss', ':.4e')
+
         #pred_disp = PredDisplay()
         progress = ProgressMeter(
             self.logger,
@@ -221,9 +224,10 @@ class Trainer(Worker):
             if idx % self.args.print_freq == 0:
                 progress.display(idx)
 
-                # update tensorboard
+                ### update tensorboard
                 step_val = epoch * len(self.train_dataloader) + idx
-                self.tensor_writer.add_scalar("Loss train", losses.avg, step_val)
+                self.tensor_writer.add_scalar("Train/Loss", losses.avg, step_val)
+                self.tensor_writer.add_scalar("Train/Gradnorm", calc_grad_norm(self.model.parameters()), step_val)
                 self.tensor_writer.flush()
             data_last = data
 
@@ -234,13 +238,13 @@ class Trainer(Worker):
         imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
         imgs_remossion = torch.stack(imgs_remossion)
         imgs_remossion = make_grid(imgs_remossion, nrow=2)
-        self.tensor_writer.add_image("Image remissions", imgs_remossion, global_step=step_val)
+        self.tensor_writer.add_image("Images/Remissions", imgs_remossion, global_step=step_val)
 
         imgs_depth = imgs[:, 1:2, :, :]
         imgs_depth = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_depth]
         imgs_depth = torch.stack(imgs_depth)
         imgs_depth = make_grid(imgs_depth, nrow=2)
-        self.tensor_writer.add_image("Image depth", imgs_depth, global_step=step_val)
+        self.tensor_writer.add_image("Images/Range", imgs_depth, global_step=step_val)
 
         for tag, param in self.model.named_parameters():
             self.tensor_writer.add_histogram(tag, param.grad.detach().cpu().numpy(), step_val)
@@ -303,7 +307,7 @@ class Trainer(Worker):
                     # update tensorboard
                     step_val = epoch * len(self.val_dataloader) + idx
                     self.tensor_writer.add_scalar\
-                        ("Loss val", losses.avg, step_val)
+                        ("Val/Loss", losses.avg, step_val)
                     self.tensor_writer.flush()
         return losses.avg
 
@@ -315,9 +319,10 @@ class Trainer(Worker):
             filename_best = '{}/cpkt_{}_best.tar'.format(self.checkpoint_dir, self.model.name)
             shutil.copyfile(filename, filename_best)
 
-    def adjust_learning_rate(self, epoch):
-        """Sets the learning rate to the niital LR decayed by 10 every 10 epochs """
-        lr = self.args.lr * (0.1 ** (epoch // 5))
-        for param_group in self.optimizer.param_groups:
-            param_group['lr'] = lr
-        return lr
+
+def calc_grad_norm(parameters):
+    if isinstance(parameters, torch.Tensor):
+        parameters = [parameters]
+    parameters = list(filter(lambda p: p.grad is not None, parameters))
+    total_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), 2) for p in parameters]), 2)
+    return total_norm
