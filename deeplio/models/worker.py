@@ -52,7 +52,7 @@ class Worker:
         self.mean = np.array(self.curr_dataset_cfg['mean'])
         self.std = np.array(self.curr_dataset_cfg['std'])
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = args.device
 
         # get input images shape and channels
         self.im_height, self.im_width = self.curr_dataset_cfg['image-height'], self.curr_dataset_cfg['image-width']
@@ -66,6 +66,7 @@ class Worker:
         Path(self.runs_dir).mkdir(parents=True, exist_ok=True)
         Path(log_dir).mkdir(parents=True, exist_ok=True)
 
+        torch.cuda.empty_cache()
         cudnn.benchmark = True
 
         set_seed(seed=SEED)

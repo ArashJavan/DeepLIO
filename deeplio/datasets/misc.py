@@ -5,7 +5,12 @@ def deeplio_collate(batch):
     r"""Puts each data field into a tensor with outer dimension batch size"""
 
     # merging images in all batches
-    images = torch.stack([b['images'] for b in batch])
+    try:
+        images = torch.stack([b['images'] for b in batch])
+    except TypeError as ex:
+        print(ex)
+
+    untrans_images = torch.stack([b['untrans-images'] for b in batch])
 
     # IMU and ground-truth measurments can have different length btw. each pair of lidar frames,
     # so we do not change their size and let them as their are
@@ -18,6 +23,7 @@ def deeplio_collate(batch):
 
     res ={}
     res['images'] = images
+    res['untrans-images'] = untrans_images
     res['imus'] = imus
     res['gts'] = gts
     res['valid'] = valids

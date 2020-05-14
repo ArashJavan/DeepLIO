@@ -55,6 +55,73 @@ def deg2rad(tensor: torch.Tensor) -> torch.Tensor:
     return tensor * pi.to(tensor.device).type(tensor.dtype) / 180.
 
 
+def convert_points_from_homogeneous(
+        points: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    r"""Function that converts points from homogeneous to Euclidean space.
+
+    Examples::
+
+        >>> input = torch.rand(2, 4, 3)  # BxNx3
+        >>> output = kornia.convert_points_from_homogeneous(input)  # BxNx2
+    """
+    if not isinstance(points, torch.Tensor):
+        raise TypeError("Input type is not a torch.Tensor. Got {}".format(
+            type(points)))
+
+    if len(points.shape) < 2:
+        raise ValueError("Input must be at least a 2D tensor. Got {}".format(
+            points.shape))
+
+    # we check for points at infinity
+    z_vec: torch.Tensor = points[..., -1:]
+
+    # set the results of division by zeror/near-zero to 1.0
+    # follow the convention of opencv:
+    # https://github.com/opencv/opencv/pull/14411/files
+    mask: torch.Tensor = torch.abs(z_vec) > eps
+    scale: torch.Tensor = torch.ones_like(z_vec).masked_scatter_(
+        mask, torch.tensor(1.0).to(points.device) / z_vec[mask])
+
+    return scale * points[..., :-1]
+
+
+def convert_points_to_homogeneous(points: torch.Tensor) -> torch.Tensor:
+    r"""Function that converts points from Euclidean to homogeneous space.
+
+    Examples::
+
+        >>> input = torch.rand(2, 4, 3)  # BxNx3
+        >>> output = kornia.convert_points_to_homogeneous(input)  # BxNx4
+    """
+    if not isinstance(points, torch.Tensor):
+        raise TypeError("Input type is not a torch.Tensor. Got {}".format(
+            type(points)))
+    if len(points.shape) < 2:
+        raise ValueError("Input must be at least a 2D tensor. Got {}".format(
+            points.shape))
+
+    return torch.nn.functional.pad(points, [0, 1], "constant", 1.0)
+
+
+def convert_affinematrix_to_homography(A: torch.Tensor) -> torch.Tensor:
+    r"""Function that converts batch of affine matrices from [Bx2x3] to [Bx3x3].
+
+    Examples::
+
+        >>> input = torch.rand(2, 2, 3)  # Bx2x3
+        >>> output = kornia.convert_affinematrix_to_homography(input)  # Bx3x3
+    """
+    if not isinstance(A, torch.Tensor):
+        raise TypeError("Input type is not a torch.Tensor. Got {}".format(
+            type(A)))
+    if not (len(A.shape) == 3 and A.shape[-2:] == (2, 3)):
+        raise ValueError("Input matrix must be a Bx2x3 tensor. Got {}"
+                         .format(A.shape))
+    H: torch.Tensor = torch.nn.functional.pad(A, [0, 0, 0, 1], "constant", value=0.)
+    H[..., -1, -1] += 1.0
+    return H
+
+
 def angle_axis_to_rotation_matrix(angle_axis: torch.Tensor) -> torch.Tensor:
     r"""Convert 3d vector of axis-angle rotation to 3x3 rotation matrix
 
@@ -527,6 +594,144 @@ def angle_axis_to_quaternion(angle_axis: torch.Tensor) -> torch.Tensor:
     quaternion[..., 1:2] += a1 * k
     quaternion[..., 2:3] += a2 * k
     return torch.cat([w, quaternion], dim=-1)
+
+
+# based on:
+# https://github.com/ClementPinard/SfmLearner-Pytorch/blob/master/inverse_warp.py#L65-L71
+
+def normalize_pixel_coordinates(
+        pixel_coordinates: torch.Tensor,
+        height: int,
+        width: int,
+        eps: float = 1e-8) -> torch.Tensor:
+    r"""Normalize pixel coordinates between -1 and 1.
+
+    Normalized, -1 if on extreme left, 1 if on extreme right (x = w-1).
+
+    Args:
+        pixel_coordinates (torch.Tensor): the grid with pixel coordinates.
+          Shape can be :math:`(*, 2)`.
+        width (int): the maximum width in the x-axis.
+        height (int): the maximum height in the y-axis.
+        eps (float): safe division by zero. (default 1e-8).
+
+    Return:
+        torch.Tensor: the normalized pixel coordinates.
+    """
+    if pixel_coordinates.shape[-1] != 2:
+        raise ValueError("Input pixel_coordinates must be of shape (*, 2). "
+                         "Got {}".format(pixel_coordinates.shape))
+    # compute normalization factor
+    hw: torch.Tensor = torch.stack([
+        torch.tensor(width), torch.tensor(height)
+    ]).to(pixel_coordinates.device).to(pixel_coordinates.dtype)
+
+    factor: torch.Tensor = torch.tensor(2.) / (hw - 1).clamp(eps)
+
+    return factor * pixel_coordinates - 1
+
+
+def denormalize_pixel_coordinates(
+        pixel_coordinates: torch.Tensor,
+        height: int,
+        width: int,
+        eps: float = 1e-8) -> torch.Tensor:
+    r"""Denormalize pixel coordinates.
+
+    The input is assumed to be -1 if on extreme left, 1 if on
+    extreme right (x = w-1).
+
+    Args:
+        pixel_coordinates (torch.Tensor): the normalized grid coordinates.
+          Shape can be :math:`(*, 2)`.
+        width (int): the maximum width in the x-axis.
+        height (int): the maximum height in the y-axis.
+        eps (float): safe division by zero. (default 1e-8).
+
+    Return:
+        torch.Tensor: the denormalized pixel coordinates.
+    """
+    if pixel_coordinates.shape[-1] != 2:
+        raise ValueError("Input pixel_coordinates must be of shape (*, 2). "
+                         "Got {}".format(pixel_coordinates.shape))
+    # compute normalization factor
+    hw: torch.Tensor = torch.stack([
+        torch.tensor(width), torch.tensor(height)
+    ]).to(pixel_coordinates.device).to(pixel_coordinates.dtype)
+
+    factor: torch.Tensor = torch.tensor(2.) / (hw - 1).clamp(eps)
+
+    return torch.tensor(1.) / factor * (pixel_coordinates + 1)
+
+
+def normalize_pixel_coordinates3d(
+        pixel_coordinates: torch.Tensor,
+        depth: int,
+        height: int,
+        width: int,
+        eps: float = 1e-8) -> torch.Tensor:
+    r"""Normalize pixel coordinates between -1 and 1.
+
+    Normalized, -1 if on extreme left, 1 if on extreme right (x = w-1).
+
+    Args:
+        pixel_coordinates (torch.Tensor): the grid with pixel coordinates.
+          Shape can be :math:`(*, 3)`.
+        depth (int): the maximum depth in the z-axis.
+        height (int): the maximum height in the y-axis.
+        width (int): the maximum width in the x-axis.
+        eps (float): safe division by zero. (default 1e-8).
+
+    Return:
+        torch.Tensor: the normalized pixel coordinates.
+    """
+    if pixel_coordinates.shape[-1] != 3:
+        raise ValueError("Input pixel_coordinates must be of shape (*, 3). "
+                         "Got {}".format(pixel_coordinates.shape))
+    # compute normalization factor
+    dhw: torch.Tensor = torch.stack([
+        torch.tensor(depth), torch.tensor(width), torch.tensor(height)
+    ]).to(pixel_coordinates.device).to(pixel_coordinates.dtype)
+
+    factor: torch.Tensor = torch.tensor(2.) / (dhw - 1).clamp(eps)
+
+    return factor * pixel_coordinates - 1
+
+
+def denormalize_pixel_coordinates3d(
+        pixel_coordinates: torch.Tensor,
+        depth: int,
+        height: int,
+        width: int,
+        eps: float = 1e-8) -> torch.Tensor:
+    r"""Denormalize pixel coordinates.
+
+    The input is assumed to be -1 if on extreme left, 1 if on
+    extreme right (x = w-1).
+
+    Args:
+        pixel_coordinates (torch.Tensor): the normalized grid coordinates.
+          Shape can be :math:`(*, 3)`.
+        depth (int): the maximum depth in the x-axis.
+        height (int): the maximum height in the y-axis.
+        width (int): the maximum width in the x-axis.
+        eps (float): safe division by zero. (default 1e-8).
+
+
+    Return:
+        torch.Tensor: the denormalized pixel coordinates.
+    """
+    if pixel_coordinates.shape[-1] != 3:
+        raise ValueError("Input pixel_coordinates must be of shape (*, 3). "
+                         "Got {}".format(pixel_coordinates.shape))
+    # compute normalization factor
+    dhw: torch.Tensor = torch.stack([
+        torch.tensor(depth), torch.tensor(width), torch.tensor(height)
+    ]).to(pixel_coordinates.device).to(pixel_coordinates.dtype)
+
+    factor: torch.Tensor = torch.tensor(2.) / (dhw - 1).clamp(eps)
+
+    return torch.tensor(1.) / factor * (pixel_coordinates + 1)
 
 
 def inv_SE3(T):

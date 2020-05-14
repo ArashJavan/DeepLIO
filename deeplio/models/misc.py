@@ -16,10 +16,13 @@ class PostProcessSiameseData(object):
         res_im_1 = []
         res_imu = []
         res_gt = []
+        res_untrans_im_0 = []
+        res_untrans_im_1 = []
 
         n_batches = len(data['images'])
         for b in range(n_batches):
             imgs = data['images'][b]
+            img_untrans = data['untrans-images'][b]
             imus = data['imus'][b]
             gts = data['gts'][b]
 
@@ -39,6 +42,9 @@ class PostProcessSiameseData(object):
                 res_im_0.append(imgs[idx_0])
                 res_im_1.append(imgs[idx_1])
 
+                res_untrans_im_0.append(img_untrans[idx_0])
+                res_untrans_im_1.append(img_untrans[idx_1])
+
                 # Determining IMU measurment btw. each combination
                 max_idx = max(combi)
                 min_idx = min(combi)
@@ -49,9 +55,11 @@ class PostProcessSiameseData(object):
 
         res_im_0 = torch.stack(res_im_0)
         res_im_1 = torch.stack(res_im_1)
+        res_untrans_im_0 = torch.stack(res_untrans_im_0)
+        res_untrans_im_1 = torch.stack(res_untrans_im_1)
         res_gt = torch.stack(res_gt)
         res_imu = [torch.stack(imu) for imu in res_imu]
-        return res_im_0, res_im_1, res_gt, res_imu
+        return res_im_0, res_im_1, res_untrans_im_0, res_untrans_im_1, res_gt, res_imu
 
     def calc_trans_mat_combis(self, transformations, combinations):
         T_global = []

@@ -174,7 +174,7 @@ def load_velo_scan_bin(file):
 
 def load_velo_scan_npy(file):
     """Load and parse a velodyne binary file."""
-    scan = np.load(file)
+    scan = np.load(file).astype(np.float32)
     return scan
 
 

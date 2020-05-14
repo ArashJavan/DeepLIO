@@ -7,6 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
+import torch
+import torch.utils.data
 from torchvision import transforms
 from torch import optim
 from torchvision.utils import make_grid
@@ -15,11 +17,12 @@ from torch.utils import tensorboard
 from pytorch_model_summary import summary
 
 from deeplio import datasets as ds
-from deeplio.losses.losses import *
+from deeplio.losses.losses import LWSLoss, HWSLoss
 from deeplio.common import spatial, utils
 from deeplio.models import nets
 from deeplio.models.misc import PostProcessSiameseData
 from deeplio.models.worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
+from .transforms import ToTensor, Normalize, CenterCrop
 
 
 class Trainer(Worker):
@@ -44,29 +47,31 @@ class Trainer(Worker):
         Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
         # preapre dataset and dataloaders
-        transform = transforms.Compose([ds.ToTensor(),
-                                        ds.Normalize(mean=self.mean, std=self.std)])
+        transform = transforms.Compose([ToTensor(),
+                                        Normalize(mean=self.mean, std=self.std),
+                                        CenterCrop(size=(64, 1792))])
 
         self.train_dataset = ds.Kitti(config=self.cfg, transform=transform)
         self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
                                                             num_workers=self.num_workers,
-                                                            shuffle=True,
-                                                            worker_init_fn = worker_init_fn,
+                                                            shuffle=False,
+                                                            worker_init_fn=worker_init_fn,
                                                             collate_fn=ds.deeplio_collate)
 
         self.val_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='validation')
         self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size,
                                                           num_workers=self.num_workers,
                                                           shuffle=False,
-                                                          worker_init_fn = worker_init_fn,
+                                                          worker_init_fn=worker_init_fn,
                                                           collate_fn = ds.deeplio_collate)
 
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=True)
-        self.model = nets.DeepLIOS0(input_shape=(self.n_channels, self.im_height, self.im_width), p=0)
-        self.model.to(self.device)
+        self.model = nets.DeepLIOS0(input_shape=(self.im_height, 1792, self.n_channels), cfg=self.cfg['arch'])
+        self.model.to(self.device) #should be before creating optimizer
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr)
-        self.criterion = GeoConstLoss()
+        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=20, gamma=0.1)
+        self.criterion = LWSLoss(beta=1125.)
 
         self.tensor_writer = tensorboard.SummaryWriter(log_dir=self.runs_dir)
 
@@ -87,7 +92,7 @@ class Trainer(Worker):
                 parser.print_help()
                 parser.exit(1)
 
-            self.logger.info("loading checkpoint '{}".format(ckp_path))
+            self.logger.info("loading checkpoint '{}'".format(ckp_path))
             checkpoint = torch.load(ckp_path, map_location=self.device)
             self.start_epoch = checkpoint['epoch']
             self.best_acc = checkpoint['best_acc']
@@ -98,13 +103,12 @@ class Trainer(Worker):
         self.logger.print(yaml.dump(self.cfg))
         self.logger.print(self.train_dataset)
         self.logger.print(self.val_dataset)
-        self.logger.print(self.model.repr())
 
         # log the network structure and number of params
-        imgs = torch.randn((2, 3, self.n_channels, self.im_height, self.im_width)).to(self.device)
+        imgs = torch.randn((2, 3, self.n_channels, self.im_height, 1792)).to(self.device)
         self.model.eval()
         self.logger.print(summary(self.model, imgs))
-        self.tensor_writer.add_graph(self.model, imgs)
+        #self.tensor_writer.add_graph(self.model, imgs)
 
     def run(self):
         self.is_running = True
@@ -119,8 +123,7 @@ class Trainer(Worker):
             if not self.is_running:
                 break
 
-            lr = self.adjust_learning_rate(epoch)
-            self.logger.info("Starting epoch:{}, lr:{}".format(epoch, lr))
+            self.logger.info("Starting epoch:{}, lr:{}".format(epoch, self.lr_scheduler.get_last_lr()[0]))
 
             # train for one epoch
             self.train_data(epoch)
@@ -137,6 +140,9 @@ class Trainer(Worker):
                 'best_acc': self.best_acc,
                 'optimizer' : self.optimizer.state_dict(),
             }, is_best)
+
+            self.lr_scheduler.step()
+            self.tensor_writer.add_scalar("LR", self.lr_scheduler.get_last_lr()[0], epoch)
 
         self.logger.info("Training done!")
         self.close()
@@ -177,25 +183,30 @@ class Trainer(Worker):
                 continue
 
             # prepare data
-            imgs_0, imgs_1, gts, imus = self.post_processor(data)
+            imgs_0, imgs_1,  imgs_untrans_0, imgs_untrans_1, gts, imus = self.post_processor(data)
+            imgs_0 = imgs_0[:, 3:5, :, :] #x, y, z, remission, rangexyz, rangexy
+            imgs_1 = imgs_1[:, 3:5, :, :]
 
             # send data to device
             imgs_0 = imgs_0.to(self.device, non_blocking=True)
             imgs_1 = imgs_1.to(self.device, non_blocking=True)
+
+            imgs_untrans_0 = imgs_untrans_0.to(self.device, non_blocking=True)
+            imgs_untrans_1 = imgs_untrans_1.to(self.device, non_blocking=True)
+
             gts = gts.to(self.device, non_blocking=True)
             imus = [imu.to(self.device, non_blocking=True) for imu in imus]
 
             # prepare ground truth tranlational and rotational part
             gt_pos = gts[:, :3, 3].contiguous()
             gt_rot = spatial.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
-            gts = [gt_pos, gt_rot]
 
             # compute model predictions and loss
-            preds = model([imgs_0, imgs_1])
-            loss = criterion(preds, gts)
+            pred_x, pred_q = model([imgs_0, imgs_1])
+            loss = criterion(pred_x, pred_q, gt_pos, gt_rot)
 
             # measure accuracy and record loss
-            losses.update(loss.detach().item(), len(preds))
+            losses.update(loss.detach().item(), len(pred_x))
             #pred_disp.update(preds.detach().cpu().numpy(), gts[0].cpu().numpy())
 
             # zero the parameter gradients, compute gradient and optimizer step
@@ -236,7 +247,6 @@ class Trainer(Worker):
 
     def validate(self, epoch):
         writer = self.tensor_writer
-        optimizer = self.optimizer
         criterion = self.criterion
         model = self.model
 
@@ -299,10 +309,10 @@ class Trainer(Worker):
 
     def save_checkpoint(self, state, is_best):
         epoch = state['epoch']
-        filename = '{}/cpkt_{}_{}.tar'.format(self.checkpoint_dir, epoch, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+        filename = '{}/cpkt_{}_{}_{}.tar'.format(self.model.name, self.checkpoint_dir, epoch, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
         torch.save(state, filename)
         if is_best:
-            filename_best = '{}/cpkt_best.tar'.format(self.checkpoint_dir)
+            filename_best = '{}/cpkt_{}_best.tar'.format(self.checkpoint_dir, self.model.name)
             shutil.copyfile(filename, filename_best)
 
     def adjust_learning_rate(self, epoch):

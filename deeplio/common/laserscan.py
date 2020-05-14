@@ -13,7 +13,7 @@ class LaserScan:
     EXTENSIONS_SCAN = ['.bin', '.txt', '.npy']
 
     def __init__(self, project=False, H=64, W=1024, fov_up=3.0, fov_down=-25.0,
-                 max_depth=80, min_depth=2.,inverse_depth=True):
+                 min_depth=1, max_depth=80, inverse_depth=False):
         self.project = project
         self.proj_H = H
         self.proj_W = W
@@ -32,7 +32,7 @@ class LaserScan:
         # projected range image - [H,W] range (-1 is no data)
         self.proj_range = np.full((self.proj_H, self.proj_W), 0., dtype=np.float32)
 
-        self.proj_range_xy = np.full((self.proj_H, self.proj_W), 0., dtype=np.float32)
+        #self.proj_range_xy = np.full((self.proj_H, self.proj_W), 0., dtype=np.float32)
 
         # unprojected range (list of depths for each point)
         self.unproj_range = np.zeros((0, 1), dtype=np.float32)
@@ -132,7 +132,7 @@ class LaserScan:
 
         # get depth of all points
         depth = np.linalg.norm(self.points, 2, axis=1)
-        depth_xy = np.linalg.norm(self.points[:, 0:2], 2, axis=1)
+        #depth_xy = np.linalg.norm(self.points[:, 0:2], 2, axis=1)
 
         # get scan components
         scan_x = self.points[:, 0]
@@ -169,7 +169,7 @@ class LaserScan:
         indices = np.arange(depth.shape[0])
         order = np.argsort(depth)[::-1]
         depth = depth[order]
-        depth_xy = depth_xy[order]
+        #depth_xy = depth_xy[order]
         indices = indices[order]
         points = self.points[order]
         remission = self.remissions[order]
@@ -180,13 +180,13 @@ class LaserScan:
         # normalizing depth
         if self.inv_depth:
             depth = (depth - self.min_depth) / (self.max_depth - self.min_depth)
-            depth_xy = (depth_xy - self.min_depth) / (self.max_depth - self.min_depth)
+            #depth_xy = (depth_xy - self.min_depth) / (self.max_depth - self.min_depth)
 
             depth = 1 - depth
-            depth_xy = 1 - depth_xy
+            #depth_xy = 1 - depth_xy
 
         self.proj_range[proj_y, proj_x] = depth
-        self.proj_range_xy[proj_y, proj_x] = depth_xy
+        #self.proj_range_xy[proj_y, proj_x] = depth_xy
 
         self.proj_xyz[proj_y, proj_x] = points
         self.proj_remission[proj_y, proj_x] = remission

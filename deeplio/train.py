@@ -49,6 +49,8 @@ if __name__ == '__main__':
                         help='evaluate model with given checkpoint on validation set (default: none)')
     parser.add_argument('-c', '--config', default="./config.yaml", help='Path to configuration file')
     parser.add_argument('-d', '--debug', default=False, help='debug logging', action='store_true', dest='debug')
+    parser.add_argument('--device', default='cpu', type=str, metavar='DEVICE',
+                        help='Device to use [cpu, cuda].')
 
     signal.signal(signal.SIGINT, signal_handler)
 

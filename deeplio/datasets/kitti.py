@@ -20,10 +20,7 @@ class KittiRawData:
     """ KiitiRawData
     more or less same as pykitti with some application specific changes
     """
-    MAX_DIST_HDL64 = 120.
-    IMU_LENGTH = 10.25
-
-    def __init__(self, base_path, date, drive, cfg=None, oxts_bin=False, oxts_txt=False, **kwargs):
+    def __init__(self, base_path, date, drive, cfg=None, oxts_bin=False, oxts_txt=False, max_points=150000, **kwargs):
         self.drive = drive
         self.date = date
         self.dataset = kwargs.get('dataset', 'extract')
@@ -31,6 +28,7 @@ class KittiRawData:
         self.calib_path = os.path.join(base_path, date)
         self.data_path = os.path.join(base_path, date, self.drive_full)
         self.frames = kwargs.get('frames', None)
+        self.max_points = max_points
 
         if cfg is not None:
             ds_config = cfg['kitti']
@@ -66,18 +64,19 @@ class KittiRawData:
         return utils.load_velo_scan(self.velo_files[idx])
 
     def get_velo_image(self, idx):
-        scan = LaserScan(H=self.image_height, W=self.image_width, fov_up=self.fov_up, fov_down=self.fov_down,
+        scan = LaserScan(project=True, H=self.image_height, W=self.image_width, fov_up=self.fov_up, fov_down=self.fov_down,
                          min_depth=self.min_depth, max_depth=self.max_depth, inverse_depth=self.inv_depth)
         scan.open_scan(self.velo_files[idx])
-        scan.do_range_projection()
-        # collect projected data and adapt ranges
 
+        # get projected data
         proj_xyz = scan.proj_xyz
         proj_remission = scan.proj_remission
         proj_range = scan.proj_range
-        proj_range_xy = scan.proj_range_xy
+        #proj_range_xy = scan.proj_range_xy
 
-        image = np.dstack((proj_xyz, proj_remission, proj_range, proj_range_xy))
+        # get unprojected data (with the max num points)
+
+        image = np.dstack((proj_xyz, proj_range, proj_remission))
         return image
 
     def _get_velo_files(self):
@@ -182,7 +181,7 @@ class Kitti(data.Dataset):
     # We set the min. no. so we can check and ignore these holes.
     MIN_NUM_OXT_SAMPLES = 8
 
-    def __init__(self, config, ds_type='train', transform=None):
+    def __init__(self, config, ds_type='train', transform=None, crop_top=0, crop_left=4):
         """
         :param root_path:
         :param config: Configuration file including split settings
@@ -190,11 +189,12 @@ class Kitti(data.Dataset):
         """
         ds_config_common = config['datasets']
         ds_config = ds_config_common['kitti']
-        root_path = ds_config['root-path']
-
         self.seq_size = ds_config_common['sequence-size']
-        self.channels = config['channels']
 
+        self.mean = ds_config['mean']
+        self.std = ds_config['std']
+        self.crop_top = crop_top
+        self.crop_left = crop_left
         self.ds_type = ds_type
         self.transform = transform
 
@@ -203,6 +203,7 @@ class Kitti(data.Dataset):
         self.bins = []
         self.images = [None] * self.seq_size
 
+        root_path = ds_config['root-path']
         # Since we are intrested in sequence of lidar frame - e.g. multiple frame at each iteration,
         # depending on the sequence size and the current wanted index coming from pytorch dataloader
         # we must switch between each drive if not enough frames exists in that specific drive wanted from dataloader,
@@ -235,8 +236,6 @@ class Kitti(data.Dataset):
         threads = [None] * self.seq_size
 
         for i in range(self.seq_size):
-            idx = indices[i]
-
             threads[i] = Thread(target=self.load_image, args=(dataset, indices[i], i))
             threads[i].start()
 
@@ -245,8 +244,7 @@ class Kitti(data.Dataset):
 
     def load_image(self, dataset, ds_index, img_index):
         img = dataset.get_velo_image(ds_index)
-        img = img[:, :, self.channels]
-        self.images[img_index] = torch.from_numpy(img)
+        self.images[img_index] = img
 
     def __len__(self):
         return self.length
@@ -289,6 +287,15 @@ class Kitti(data.Dataset):
         self.load_images(dataset, indices)
         images = self.images
 
+        images_org = torch.stack([torch.from_numpy(im.transpose(2, 0, 1)) for im in images])
+
+        ct, cl = self.crop_top, self.crop_left
+        mean = torch.as_tensor(self.mean)
+        std = torch.as_tensor(self.std)
+        images_normalized = [torch.from_numpy(img[:, cl:-cl, :].transpose(2, 0, 1)) for img in images]
+        images_normalized = torch.stack(images_normalized)
+        images_normalized.sub_(mean[None, :, None, None]).div_(std[None, :, None, None])
+
         imus = []
         gts = []
         for i in range(self.seq_size - 1):
@@ -301,12 +308,11 @@ class Kitti(data.Dataset):
 
             if (len_oxt== 0) or (len_oxt < self.MIN_NUM_OXT_SAMPLES):
                 self.logger.debug("Not enough OXT-samples: Index: {}, DS: {}_{}, len:{}, velo-timestamps: {}-{}".format(index, dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
-                tmp_imu = np.zeros((self.seq_size - 1, self.MIN_NUM_OXT_SAMPLES, 6))
-                tmp_gt = np.zeros((self.seq_size - 1, self.MIN_NUM_OXT_SAMPLES, 4, 4))
-                items = [images, tmp_imu, tmp_gt]
-                if self.transform:
-                    items = self.transform(items)
-                data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': False, 'meta': [0]}
+                tmp_imu = torch.zeros((self.seq_size - 1, self.MIN_NUM_OXT_SAMPLES, 6))
+                tmp_gt = torch.zeros((self.seq_size - 1, self.MIN_NUM_OXT_SAMPLES, 4, 4))
+                items = [images_normalized, tmp_imu, tmp_gt]
+                data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': False, 'meta': [0],
+                        'untrans-images': images_org}
                 return data
             else:
                 oxts_timestamps = dataset.timestamps_imu[oxt_indices]
@@ -317,20 +323,20 @@ class Kitti(data.Dataset):
                 imus.append(imu_values)
                 gts.append(gt)
 
-        items = [images, imus, gts]
-
         meta_data = {'index': [index], 'date': [dataset.date], 'drive': [dataset.drive], 'velo-index': [indices],
                      'velo-timestamps': [ts.timestamp() for ts in velo_timespamps],
                      'oxts-timestamps': [ts.timestamp() for ts in oxts_timestamps]}
 
-        if self.transform:
-             items = self.transform(items)
+        imus = [torch.FloatTensor(d) for d in imus]
+        gts = [torch.FloatTensor(d) for d in gts]
 
-        data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': True, 'meta': meta_data}
+        data = {'images': images_normalized, 'imus': imus, 'gts': gts, 'valid': True,
+                'meta': meta_data, 'untrans-images': images_org}
 
         end = time.time()
-        #self.logger.debug("Idx:{}, dt: {}".format(index, end - start))
 
+        #print(index, dataset.data_path, indices)
+        #self.logger.debug("Idx:{}, dt: {}".format(index, end - start))
         return data
 
     def __repr__(self):
