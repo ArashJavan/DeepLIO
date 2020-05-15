@@ -10,17 +10,18 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+import torch
+import torch.utils.data
 from torchvision import transforms
-from torchvision.utils import make_grid
 from torch.utils import tensorboard
 
-
 from deeplio import datasets as ds
-from deeplio.losses.losses import *
+from deeplio.losses.losses import LWSLoss, HWSLoss
 from deeplio.common import spatial, utils
 from deeplio.models import nets
 from deeplio.models.misc import PostProcessSiameseData
 from deeplio.models.worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
+from .transforms import ToTensor, Normalize, CenterCrop
 
 
 class Tester(Worker):
@@ -45,8 +46,9 @@ class Tester(Worker):
         Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
         # preapre dataset and dataloaders
-        transform = transforms.Compose([ds.ToTensor(),
-                                        ds.Normalize(mean=self.mean, std=self.std)])
+        transform = transforms.Compose([ToTensor(),
+                                        Normalize(mean=self.mean, std=self.std),
+                                        CenterCrop(size=(self.im_height_model, self.im_width_model))])
 
         self.test_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='test')
         self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
@@ -56,10 +58,11 @@ class Tester(Worker):
                                                            collate_fn = ds.deeplio_collate)
 
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=False)
-        self.model = nets.DeepLIOS0(input_shape=(self.n_channels, self.im_height, self.im_width), p=0)
+        self.model = nets.DeepLIOS0(input_shape=(self.im_height_model, self.im_width_model,
+                                                 self.n_channels), cfg=self.cfg['arch'])
         self.model.to(self.device)
 
-        self.criterion = GeoConstLoss()
+        self.criterion = LWSLoss()
 
         self.tensor_writer = tensorboard.SummaryWriter(log_dir=self.runs_dir)
 
@@ -68,7 +71,7 @@ class Tester(Worker):
         self.logger.print("batch-size:{}, workers: {}".
                           format(self.batch_size, self.num_workers))
 
-        # optionally resume from a checkpoint
+        # load trained model checkpoint
         if args.model:
             if not os.path.isfile(args.model):
                 self.logger.error("no model checkpoint found at '{}'".format(args.model))
@@ -87,15 +90,13 @@ class Tester(Worker):
 
         self.logger.print(yaml.dump(self.cfg))
         self.logger.print(self.test_dataset)
-        self.logger.print(self.model.repr())
-
 
     def run(self):
         self.is_running = True
 
         self.test()
 
-        self.logger.info("Training done!")
+        self.logger.info("Testing done!")
         self.close()
 
     def test(self):
@@ -132,7 +133,7 @@ class Tester(Worker):
                     continue
 
                 # prepare data
-                imgs_0, imgs_1, gts, imus = self.post_processor(data)
+                imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, gts, imus = self.post_processor(data)
 
                 # send data to device
                 imgs_0 = imgs_0.to(self.device, non_blocking=True)
@@ -143,14 +144,13 @@ class Tester(Worker):
                 # prepare ground truth tranlational and rotational part
                 gt_pos = gts[:, :3, 3].contiguous()
                 gt_rot = spatial.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
-                gts = [gt_pos, gt_rot]
 
                 # compute model predictions and loss
-                preds = model([imgs_0, imgs_1])
-                loss = criterion(preds, gts)
+                pred_x, pred_q = model([imgs_0, imgs_1])
+                loss = criterion(pred_x, pred_q, gt_pos, gt_rot)
 
                 # measure accuracy and record loss
-                losses.update(loss.detach().item(), len(preds))
+                losses.update(loss.detach().item(), len(pred_x))
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)
@@ -164,6 +164,7 @@ class Tester(Worker):
                 oxts_ts = meta['oxts-timestamps']
                 velo_ts = meta['velo-timestamps']
 
+                gt_global = data['gts'][0][0].detach().cpu().numpy()
                 seq_name = "{}_{}".format(date, drive)
                 if seq_name not in seq_names:
                     if last_seq is not None:
@@ -173,13 +174,15 @@ class Tester(Worker):
                             last_seq.save_plot()
 
                     curr_seq = OdomSeqRes(date, drive, output_dir=self.out_dir)
-                    curr_seq.start_pose = data['gts'][0][0][0].detach().cpu().numpy()
-                    curr_seq.start_time = velo_ts[0]
+                    curr_seq.add_local_prediction(velo_ts[0], 0., gt_global[0], gt_global[0])
                     # add the file name and file-pointer to the list
                     seq_names.append(seq_name)
-                gt_local = gt_pos[0].detach().cpu().numpy()
-                gt_global = data['gts'][0][0][-1][0:3, 3].detach().cpu().numpy()
-                curr_seq.add_res(preds[0].detach().cpu().numpy(), velo_ts[1], losses.avg, gt_local=gt_local, gt_global=gt_global)
+
+                #gt_local = gt_pos[0].detach().cpu().squeeze().numpy()
+                T_local = np.identity(4)
+                T_local[:3, 3] = pred_x.detach().cpu().squeeze().numpy()
+                T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q.detach().cpu().squeeze()).numpy()
+                curr_seq.add_local_prediction(velo_ts[1], losses.avg, T_local, gt_global[-1])
 
                 last_seq = curr_seq
                 if idx % self.args.print_freq == 0:
@@ -200,59 +203,49 @@ class OdomSeqRes:
     def __init__(self, date, drive, output_dir="."):
         self.date = date
         self.drive = drive
-        self.odom_res = []
+        self.T_local_pred = []
+        self.T_global = []
         self.timestamps = []
-        self.gt_local = []
-        self.gt_global = []
-
-        self.start_pose = np.identity(4)
-        self.start_time = 0.
         self.loss = []
         self.out_dir = output_dir
 
-    def add_res(self, odom, timestamp, loss, gt_local, gt_global):
+    def add_local_prediction(self, timestamp, loss, T_local, T_gt_global):
         self.timestamps.append(timestamp)
         self.loss.append(loss)
-        self.odom_res.append(odom)
-        self.gt_local.append(gt_local)
-        self.gt_global.append(gt_global)
+        self.T_local_pred.append(T_local)
+        self.T_global.append(T_gt_global)
 
     def write_to_file(self):
-        start_pos = self.start_pose[:3, 2]
-
-        odom_local = np.asarray(self.odom_res)
-        odom_global = np.cumsum(odom_local, axis=0) + start_pos
+        T_glob_pred = []
+        T0 = self.T_local_pred[0]
+        T_glob_pred.append(T0)
+        for i in range(1, len(self.T_local_pred)):
+            T_i = self.T_local_pred[i]
+            T = np.matmul(T0, T_i)
+            T_glob_pred.append(T)
+            T0 = np.copy(T)
+        self.T_global = np.array(self.T_global)
+        self.T_local_pred = np.array(self.T_local_pred)
+        T_glob_pred = np.array(T_glob_pred)
 
         self.timestamps = np.asarray(self.timestamps).reshape(-1, 1)
         self.loss = np.asarray(self.loss).reshape(-1, 1)
-        if self.gt_global and self.gt_local:
-            gt_local = np.asarray(self.gt_local)
-            gt_global = np.asarray(self.gt_global)
 
-            res = np.hstack((self.timestamps, odom_local, gt_local, odom_global, gt_global, self.loss))
-        else:
-            res = np.hstack((self.timestamps, odom_local, odom_global, self.loss))
+        res = np.hstack((self.timestamps,
+                         self.T_local_pred.reshape(len(self.T_local_pred), -1),
+                         T_glob_pred.reshape(len(T_glob_pred), -1),
+                         self.T_global.reshape(len(self.T_global), -1),
+                         self.loss))
 
         fname = "{}/{}_{}.csv".format(self.out_dir, self.date, self.drive)
         np.savetxt(fname, res, fmt='%.5f', delimiter=',')
 
-    def save_plot(self):
-        if self.gt_global:
-            gt_global = np.asarray(self.gt_global)
-
-        start_pos = self.start_pose[:3, 2]
-
-        odom_local = np.asarray(self.odom_res)
-        odom_global = np.cumsum(odom_local, axis=0) + start_pos
-
         fname = "{}/{}_{}.png".format(self.out_dir, self.date, self.drive)
-        fig, axs = plt.subplots(1, 1)
-        axs.plot(odom_global[:, 0], odom_global[:, 1], label="preds")
+        plt.plot(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5)
+        plt.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5)
+        plt.grid()
+        plt.savefig(fname)
 
-        if self.gt_global and self.gt_local:
-            axs.plot(gt_global[:, 0], gt_global[:, 1], label="gt")
-
-        fig.savefig(fname)
 
 
 

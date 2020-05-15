@@ -13,7 +13,7 @@ class LaserScan:
     EXTENSIONS_SCAN = ['.bin', '.txt', '.npy']
 
     def __init__(self, project=False, H=64, W=1024, fov_up=3.0, fov_down=-25.0,
-                 min_depth=1, max_depth=80, inverse_depth=False):
+                 min_depth=1, max_depth=80):
         self.project = project
         self.proj_H = H
         self.proj_W = W
@@ -21,7 +21,6 @@ class LaserScan:
         self.proj_fov_down = fov_down
         self.max_depth = max_depth
         self.min_depth = min_depth
-        self.inv_depth = inverse_depth
         self.reset()
 
     def reset(self):
@@ -175,15 +174,6 @@ class LaserScan:
         remission = self.remissions[order]
         proj_y = proj_y[order]
         proj_x = proj_x[order]
-
-        # assing to images
-        # normalizing depth
-        if self.inv_depth:
-            depth = (depth - self.min_depth) / (self.max_depth - self.min_depth)
-            #depth_xy = (depth_xy - self.min_depth) / (self.max_depth - self.min_depth)
-
-            depth = 1 - depth
-            #depth_xy = 1 - depth_xy
 
         self.proj_range[proj_y, proj_x] = depth
         #self.proj_range_xy[proj_y, proj_x] = depth_xy

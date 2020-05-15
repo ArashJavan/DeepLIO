@@ -51,7 +51,7 @@ class Trainer(Worker):
         # preapre dataset and dataloaders
         transform = transforms.Compose([ToTensor(),
                                         Normalize(mean=self.mean, std=self.std),
-                                        CenterCrop(size=(64, 1792))])
+                                        CenterCrop(size=(self.im_height_model, self.im_width_model))])
 
         self.train_dataset = ds.Kitti(config=self.cfg, transform=transform)
         self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
@@ -68,7 +68,8 @@ class Trainer(Worker):
                                                           collate_fn = ds.deeplio_collate)
 
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=True)
-        self.model = nets.DeepLIOS0(input_shape=(self.im_height, 1792, self.n_channels), cfg=self.cfg['arch'])
+        self.model = nets.DeepLIOS0(input_shape=(self.im_height_model, self.im_width_model,
+                                                 self.n_channels), cfg=self.cfg['arch'])
         self.model.to(self.device) #should be before creating optimizer
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr)
@@ -107,7 +108,7 @@ class Trainer(Worker):
         self.logger.print(self.val_dataset)
 
         # log the network structure and number of params
-        imgs = torch.randn((2, 3, self.n_channels, self.im_height, 1792)).to(self.device)
+        imgs = torch.randn((2, 3, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
         self.model.eval()
         self.logger.print(summary(self.model, imgs))
         #self.tensor_writer.add_graph(self.model, imgs)
@@ -189,8 +190,6 @@ class Trainer(Worker):
             imgs_0, imgs_1,  imgs_untrans_0, imgs_untrans_1, gts, imus = self.post_processor(data)
 
             # send data to device
-            imgs_0 = imgs_0[:, 3:5, :, :] #x, y, z, remission, rangexyz, rangexy
-            imgs_1 = imgs_1[:, 3:5, :, :]
             imgs_0 = imgs_0.to(self.device, non_blocking=True)
             imgs_1 = imgs_1.to(self.device, non_blocking=True)
 
@@ -281,9 +280,6 @@ class Trainer(Worker):
                 imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, gts, imus = self.post_processor(data)
 
                 # send data to device
-                imgs_0 = imgs_0[:, 3:5, :, :]  # x, y, z, remission, rangexyz, rangexy
-                imgs_1 = imgs_1[:, 3:5, :, :]
-
                 imgs_0 = imgs_0.to(self.device, non_blocking=True)
                 imgs_1 = imgs_1.to(self.device, non_blocking=True)
                 gts = gts.to(self.device, non_blocking=True)

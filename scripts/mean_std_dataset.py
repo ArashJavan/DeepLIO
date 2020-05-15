@@ -25,6 +25,7 @@ PIVOT = 200
 
 
 def run_job(args):
+    global cmd_args
     bar_pos = args[0]
     dataset = args[1]
 
@@ -40,6 +41,9 @@ def run_job(args):
 
     for i in tqdm.trange(length, desc=dataset.data_path, position=bar_pos):
         im = dataset.get_velo_image(i)
+        if cmd_args['inv_depth']:
+            im_depth = im[:, :, 3]
+            im_depth[im_depth > 0.] = 1 / im_depth[im_depth > 0.]
         im_channels = im.reshape(-1, num_channels).T
         pixel_num += (im.size / num_channels)
         channel_sum += np.sum(im_channels, axis=1)
@@ -124,14 +128,15 @@ def main(args):
     print("mean: {}".format(channel_mean))
     print("std: {}".format(channel_std))
 
-
+global cmd_args
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DeepLIO Training')
     parser.add_argument('-c', '--config', default="../config.yaml", help='configuration file')
     parser.add_argument('--plot', default=False, help='Plot and save histogram statistic', action='store_true')
+    parser.add_argument('--inv-depth', default=False, help='Inverse Depth', action='store_true')
 
-    args = vars(parser.parse_args())
-    main(args)
+    cmd_args = vars(parser.parse_args())
+    main(cmd_args)
     print("Done!")
 
 

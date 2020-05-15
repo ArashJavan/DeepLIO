@@ -25,7 +25,8 @@ def set_seed(seed=42):
 
 
 def worker_init_fn(worker_id):
-    set_seed(seed=SEED)
+    # set_seed(seed=SEED)
+    pass
 
 
 class Worker:
@@ -55,7 +56,11 @@ class Worker:
         self.device = args.device
 
         # get input images shape and channels
+        crop_height, crop_width = self.curr_dataset_cfg.get('crop-factors', [0, 0])
         self.im_height, self.im_width = self.curr_dataset_cfg['image-height'], self.curr_dataset_cfg['image-width']
+        self.im_height_model = self.im_height - (2 * crop_height)
+        self.im_width_model = self.im_width - (2 * crop_width)
+
         self.n_channels = len(self.cfg['channels'])
         
         # create output folder structure
@@ -69,7 +74,7 @@ class Worker:
         torch.cuda.empty_cache()
         cudnn.benchmark = True
 
-        set_seed(seed=SEED)
+        #set_seed(seed=SEED)
 
         flog_name = "{}/{}_{}.log".format(log_dir, self.ACTION, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
         if args.debug:

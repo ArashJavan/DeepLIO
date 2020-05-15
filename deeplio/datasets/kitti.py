@@ -39,7 +39,6 @@ class KittiRawData:
             self.seq_size = cfg.get('sequence-size', 2)
             self.max_depth = ds_config.get('max-depth', 80)
             self.min_depth = ds_config.get('min-depth', 2)
-            self.inv_depth = ds_config.get('inverse-depth', False)
 
         # Find all the data files
         self._get_velo_files()
@@ -65,7 +64,7 @@ class KittiRawData:
 
     def get_velo_image(self, idx):
         scan = LaserScan(project=True, H=self.image_height, W=self.image_width, fov_up=self.fov_up, fov_down=self.fov_down,
-                         min_depth=self.min_depth, max_depth=self.max_depth, inverse_depth=self.inv_depth)
+                         min_depth=self.min_depth, max_depth=self.max_depth)
         scan.open_scan(self.velo_files[idx])
 
         # get projected data
@@ -178,7 +177,7 @@ class Kitti(data.Dataset):
     # We set the min. no. so we can check and ignore these holes.
     MIN_NUM_OXT_SAMPLES = 8
 
-    def __init__(self, config, ds_type='train', transform=None, crop_top=0, crop_left=4):
+    def __init__(self, config, ds_type='train', transform=None):
         """
         :param root_path:
         :param config: Configuration file including split settings
@@ -187,11 +186,15 @@ class Kitti(data.Dataset):
         ds_config_common = config['datasets']
         ds_config = ds_config_common['kitti']
         self.seq_size = ds_config_common['sequence-size']
-
+        self.inv_depth = ds_config.get('inverse-depth', False)
         self.mean = ds_config['mean']
         self.std = ds_config['std']
-        self.crop_top = crop_top
-        self.crop_left = crop_left
+        self.channels = config['channels']
+
+        crop_factors = ds_config.get('crop-factors', [0, 0])
+        self.crop_top = crop_factors[0]
+        self.crop_left = crop_factors[1]
+
         self.ds_type = ds_type
         self.transform = transform
 
@@ -284,14 +287,18 @@ class Kitti(data.Dataset):
         self.load_images(dataset, indices)
         images = self.images
 
-        images_org = torch.stack([torch.from_numpy(im.transpose(2, 0, 1)) for im in images])
+        imgs_org = torch.stack([torch.from_numpy(im.transpose(2, 0, 1)) for im in images])
 
         ct, cl = self.crop_top, self.crop_left
         mean = torch.as_tensor(self.mean)
         std = torch.as_tensor(self.std)
-        images_normalized = [torch.from_numpy(img[:, cl:-cl, :].transpose(2, 0, 1)) for img in images]
-        images_normalized = torch.stack(images_normalized)
-        images_normalized.sub_(mean[None, :, None, None]).div_(std[None, :, None, None])
+        imgs_normalized = [torch.from_numpy(img[:, cl:-cl, :].transpose(2, 0, 1)) for img in images]
+        imgs_normalized = torch.stack(imgs_normalized)
+        if self.inv_depth:
+            im_depth = imgs_normalized[:, 3]
+            im_depth[im_depth > 0.] = 1 / im_depth[im_depth > 0.]
+        imgs_normalized.sub_(mean[None, :, None, None]).div_(std[None, :, None, None])
+        imgs_normalized = imgs_normalized[:, self.channels]
 
         imus = []
         gts = []
@@ -307,9 +314,9 @@ class Kitti(data.Dataset):
                 self.logger.debug("Not enough OXT-samples: Index: {}, DS: {}_{}, len:{}, velo-timestamps: {}-{}".format(index, dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
                 tmp_imu = torch.zeros((self.seq_size - 1, self.MIN_NUM_OXT_SAMPLES, 6))
                 tmp_gt = torch.zeros((self.seq_size - 1, self.MIN_NUM_OXT_SAMPLES, 4, 4))
-                items = [images_normalized, tmp_imu, tmp_gt]
+                items = [imgs_normalized, tmp_imu, tmp_gt]
                 data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': False, 'meta': [0],
-                        'untrans-images': images_org}
+                        'untrans-images': imgs_org}
                 return data
             else:
                 oxts_timestamps = dataset.timestamps_imu[oxt_indices]
@@ -327,8 +334,8 @@ class Kitti(data.Dataset):
         imus = [torch.FloatTensor(d) for d in imus]
         gts = [torch.FloatTensor(d) for d in gts]
 
-        data = {'images': images_normalized, 'imus': imus, 'gts': gts, 'valid': True,
-                'meta': meta_data, 'untrans-images': images_org}
+        data = {'images': imgs_normalized, 'imus': imus, 'gts': gts, 'valid': True,
+                'meta': meta_data, 'untrans-images': imgs_org}
 
         end = time.time()
 

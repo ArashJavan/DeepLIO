@@ -37,6 +37,9 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--config', default="./config.yaml", help='Path to configuration file')
     parser.add_argument('-d', '--debug', default=False, help='debug logging', action='store_true', dest='debug')
     parser.add_argument('--plot', default=False, help='plot the results', action='store_true', dest='plot')
+    parser.add_argument('--device', default='cpu', type=str, metavar='DEVICE',
+                        help='Device to use [cpu, cuda].')
+
 
     signal.signal(signal.SIGINT, signal_handler)
 

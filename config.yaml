@@ -1,25 +1,30 @@
 datasets:
-    sequence-size: 3 # must be >= 2
+    sequence-size: 2 # must be >= 2
     kitti:
       root-path: "/media/ajava/Data/Datasets/KITTI/"
       image-width: 1800
       image-height: 64
+      crop-factors: [0, 4] # top, left
       fov-up: 3.
       fov-down: -25.
       max-depth: 80.
       min-depth: 1.
-      inverse-depth: false
+      inverse-depth: true
       train:
         2011-10-03: [27, 42, 34]
         2011-09-30: [16, 18, 20, 27]
       test:
-        2011-09-30: [33, 34]
+        # 2011-09-30: [33, 34]
+        2011-10-03: [42]
       validation:
         2011-09-26: [32, 46]
 
       # channesl: x, y, z, range(x,y,z), remissions)
-      mean: [-0.05815086, 0.416526, -0.85854134, 8.25940242, 0.216429  ]
-      std: [10.03660669, 7.49360111, 0.8761208, 9.50562911, 0.17403938]
+      mean: [-0.05815, 0.4165, -0.8585, 0.1029, 0.2164]
+      std: [10.0366, 7.4936, 0.8761, 0.0857, 0.1740]
+
+      #mean: [-0.0581, 0.4165, -0.8585, 8.2594, 0.2164]
+      #std: [10.0366, 7.4936, 0.8761, 9.5056, 0.1740]
 
 arch:
   name: "deeplio3"
