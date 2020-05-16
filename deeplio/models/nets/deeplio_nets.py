@@ -44,22 +44,19 @@ class DeepLIOS3(BaseNet):
                                     #SELayer(512, reduction=2),
                                     nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)))
 
-        self.global_avg_pool = nn.AdaptiveAvgPool2d(1)
-
         # output middle fire conv-layers
         x = torch.rand((1, 2*feat_out_c, feat_out_h, feat_out_w))
         self.eval()
         with torch.no_grad():
             x = self.fire12(x)
             x = self.fire34(x)
-            x = self.global_avg_pool(x).view((1, -1))
+            x = x.view(-1, num_flat_features(x))
         _, mid_c = x.shape
 
-        self.fc1 = nn.Linear(mid_c, 1024)
-        self.fc2 = nn.Linear(1024, 512)
+        self.fc1 = nn.Linear(mid_c, 512)
 
         if self.p > 0:
-            self.fropout = nn.Dropout2d(p=self.p)
+            self.dropout = nn.Dropout2d(p=self.p)
 
         self.fc_pos = nn.Linear(512, 3)
         self.fc_ori = nn.Linear(512, 4)
@@ -75,15 +72,11 @@ class DeepLIOS3(BaseNet):
         x = self.fire12(x)
         x = self.fire34(x)
 
-        x = self.global_avg_pool(x)
-        b, c, _, _ = x.size()
-        x = x.view((b, c))
-
+        x = x.view(-1, num_flat_features(x))
         x = self.fc1(x)
-        x = self.fc2(x)
 
         if self.p > 0:
-            x = self.fropout(x)
+            x = self.dropout(x)
 
         x_pos = self.fc_pos(x)
         x_ori = self.fc_ori(x)
@@ -108,15 +101,14 @@ class DeepLIOS0(BaseNet):
         _, c, h, w = x.shape
         self.fc_in_shape = (c, h, w)
 
-        self.fc1 = nn.Linear(c*h*w, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, 16)
+        self.fc1 = nn.Linear(2*c, 1024)
+        self.fc2 = nn.Linear(1024, 512)
 
         if self.p > 0:
             self.fropout = nn.Dropout2d(p=self.p)
 
-        self.fc_pos = nn.Linear(16, 3)
-        self.fc_ori = nn.Linear(16, 4)
+        self.fc_pos = nn.Linear(512, 3)
+        self.fc_ori = nn.Linear(512, 4)
 
     def create_inner_net(self, channels):
         net = nn.Sequential(
@@ -135,7 +127,7 @@ class DeepLIOS0(BaseNet):
 
                 nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
                 nn.BatchNorm2d(64),
-                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
+                nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True),
                 nn.ReLU(True),
 
                 nn.Conv2d(64, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
@@ -147,20 +139,11 @@ class DeepLIOS0(BaseNet):
                 nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
                 nn.ReLU(True),
 
-                nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
-                nn.BatchNorm2d(128),
-                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
+                nn.Conv2d(128, out_channels=256, kernel_size=3, stride=(1, 1), padding=1),
+                nn.BatchNorm2d(256),
                 nn.ReLU(True),
 
-                nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
-                nn.BatchNorm2d(128),
-                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
-                nn.ReLU(True),
-
-                nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1),
-                nn.BatchNorm2d(128),
-                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
-                nn.ReLU(True),
+                nn.AdaptiveAvgPool2d(1)
             )
         return net
 
@@ -170,15 +153,12 @@ class DeepLIOS0(BaseNet):
         imgs_0 = images[0]
         imgs_1 = images[1]
 
-        out_0 = self.siamese_net(imgs_0)
-        out_1 = self.siamese_net(imgs_1)
-        out_0 = out_0.view(-1, num_flat_features(out_0))
-        out_1 = out_1.view(-1, num_flat_features(out_1))
-        out = torch.abs(out_1 - out_0)
+        out_0 = self.siamese_net(imgs_0).squeeze()
+        out_1 = self.siamese_net(imgs_1).squeeze()
+        out = torch.cat((out_1, out_0), dim=1)
 
         out = F.relu(self.fc1(out))
         out = F.relu(self.fc2(out))
-        out = F.relu(self.fc3(out))
 
         if self.p > 0:
             out = self.fropout(out)
@@ -186,7 +166,6 @@ class DeepLIOS0(BaseNet):
         pos = self.fc_pos(out)
         ori = self.fc_ori(out)
         return pos, ori
-
 
 
 

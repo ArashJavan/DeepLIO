@@ -29,25 +29,24 @@ class LWSLoss(nn.Module):
 class HWSLoss(nn.Module):
     """Homoscedastic weighted Loss
     """
-    def __init__(self, sx=0., sq=-2.5, train=True, device="cpu"):
+    def __init__(self, sx=0., sq=-2.5, learn=True, device="cpu"):
         """
-
         :param sx:
         :param sq:
-        :param train: learning the smoothnes terms during training
+        :param learn: learning the smoothnes terms during training
         """
         super(HWSLoss, self).__init__()
 
-        self.sx = torch.tensor(sx, device=device, requires_grad=True)
-        self.sq = torch.tensor(sq, device=device, requires_grad=True)
+        self.sx = torch.tensor(sx, device=device, requires_grad=learn)
+        self.sq = torch.tensor(sq, device=device, requires_grad=learn)
         self.loss_fn = nn.MSELoss()
 
     def forward(self, x_pred, q_pred, x_gt, q_gt):
         x_hat = x_pred
         q_hat = normalize_quaternion(q_pred)
 
-        x_loss = self.loss_fn(x_hat, x_gt) * torch.exp(self.sx) + self.sx
-        q_loss = self.loss_fn(q_hat, q_gt) * torch.exp(self.sq) + self.sq
+        x_loss = self.loss_fn(x_hat, x_gt) * torch.exp(-self.sx) + self.sx
+        q_loss = self.loss_fn(q_hat, q_gt) * torch.exp(-self.sq) + self.sq
         loss = x_loss + q_loss
         return loss
 

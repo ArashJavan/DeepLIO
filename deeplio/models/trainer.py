@@ -19,12 +19,13 @@ from tensorboardX import SummaryWriter
 from pytorch_model_summary import summary
 
 from deeplio import datasets as ds
-from deeplio.losses.losses import LWSLoss, HWSLoss
+from deeplio.losses import get_loss_function
 from deeplio.common import spatial, utils
 from deeplio.models import nets
 from deeplio.models.misc import PostProcessSiameseData
 from deeplio.models.worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
 from .transforms import ToTensor, Normalize, CenterCrop
+from .optimizer import create_optimizer
 
 
 class Trainer(Worker):
@@ -68,13 +69,13 @@ class Trainer(Worker):
                                                           collate_fn = ds.deeplio_collate)
 
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=True)
-        self.model = nets.DeepLIOS0(input_shape=(self.im_height_model, self.im_width_model,
+        self.model = nets.DeepLIOS3(input_shape=(self.im_height_model, self.im_width_model,
                                                  self.n_channels), cfg=self.cfg['arch'])
         self.model.to(self.device) #should be before creating optimizer
 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
         self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.1)
-        self.criterion = LWSLoss(beta=1125.)
+        self.criterion = get_loss_function(self.cfg, args.device)
 
         self.tensor_writer = SummaryWriter(log_dir=self.runs_dir)
 
@@ -204,7 +205,7 @@ class Trainer(Worker):
             gt_rot = spatial.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
 
             # compute model predictions and loss
-            pred_x, pred_q = model([imgs_0, imgs_1])
+            pred_x, pred_q, _, _ = model([imgs_0, imgs_1])
             loss = criterion(pred_x, pred_q, gt_pos, gt_rot)
 
             # measure accuracy and record loss
