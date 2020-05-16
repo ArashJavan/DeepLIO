@@ -72,8 +72,8 @@ class Trainer(Worker):
                                                  self.n_channels), cfg=self.cfg['arch'])
         self.model.to(self.device) #should be before creating optimizer
 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr)
-        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=20, gamma=0.1)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.1)
         self.criterion = LWSLoss(beta=1125.)
 
         self.tensor_writer = SummaryWriter(log_dir=self.runs_dir)
@@ -232,7 +232,7 @@ class Trainer(Worker):
 
         # save infos to -e.g. gradient hists and images to tensorbaord and the end of training
         b, s, c, h, w = np.asarray(data_last['images'].shape)
-        imgs = data_last['images'][:, :, 3:].reshape(b*s, 2, h, w)
+        imgs = data_last['images'].reshape(b*s, c, h, w)
         imgs_remossion = imgs[:, 1, :, :]
         imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
         imgs_remossion = torch.stack(imgs_remossion)
