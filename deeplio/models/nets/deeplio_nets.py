@@ -165,7 +165,7 @@ class DeepLIOS0(BaseNet):
 
         pos = self.fc_pos(out)
         ori = self.fc_ori(out)
-        return pos, ori
+        return pos, ori, None, None
 
 
 

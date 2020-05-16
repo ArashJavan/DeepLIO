@@ -14,6 +14,6 @@ def get_loss_function(cfg, device):
         return HWSLoss(sx=sx, sq=sq, learn=learn_smooth, device=device)
     elif loss_name == 'lwsloss':
         beta = params.get('beta', 1125.)
-        return LWSLoss(beta=beta, )
+        return LWSLoss(beta=beta)
     else:
         raise ValueError("Loss {} is not supported!".format(loss_type))
