@@ -734,21 +734,23 @@ def denormalize_pixel_coordinates3d(
     return torch.tensor(1.) / factor * (pixel_coordinates + 1)
 
 
+
 def inv_SE3(T):
     r"""Calculates the inverse of an SE(3) matrix
     :param T:
     :return:
     """
+    # convert to numpy, since numpy float ops seems to be more precise
+    # see @https://github.com/pytorch/pytorch/issues/17678
     if isinstance(T, torch.Tensor):
-        eye = torch.eye
-        matmul = torch.matmul
-    else:
-        eye = np.eye
-        matmul = np.matmul
+        T_ = T.numpy()
 
-    R = T[:3, :3]
-    t = T[:3, 3]
-    T_inv = eye(4)
+    R = T_[:3, :3]
+    t = T_[:3, 3]
+    T_inv = np.eye(4)
     T_inv[:3, :3] = R.T
-    T_inv[:3, 3] = -matmul(R.T, t)
+    T_inv[:3, 3] = -np.matmul(R.T, t)
+
+    if isinstance(T, torch.Tensor):
+        T_inv = torch.from_numpy(T_inv).type(T.dtype)
     return T_inv

@@ -33,12 +33,11 @@ class Tester(Worker):
 
         if self.seq_size != 2:
             self.logger.info("sequence size in the testing mode should be set to two.")
-            self.logger.info("setting sequence size (seq-size = 2).")
-            self.seq_size = 2
+            raise ValueError("sequence size in the testing mode should be set to two.")
 
         if self.batch_size != 1:
             self.logger.info("batch size in the testing mode should be set to one.")
-            self.logger.info("setting sequence size (batch-size = 1).")
+            self.logger.info("setting batch size (batch-size = 1).")
             self.batch_size = 1
 
         # create the folder for saving training checkpoints
@@ -146,7 +145,9 @@ class Tester(Worker):
                 gt_rot = spatial.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
 
                 # compute model predictions and loss
-                pred_x, pred_q = model([imgs_0, imgs_1])
+                pred_x, pred_q, _, _ = model([imgs_0, imgs_1])
+                #self.logger.info("px: {}, gx: {}".format(pred_x.detach().cpu().numpy(), gt_pos.detach().cpu().numpy()))
+                #self.logger.info("pq: {}, gq: {}".format(pred_q.detach().cpu().numpy(), gt_rot.detach().cpu().numpy()))
                 loss = criterion(pred_x, pred_q, gt_pos, gt_rot)
 
                 # measure accuracy and record loss
@@ -175,13 +176,17 @@ class Tester(Worker):
 
                     curr_seq = OdomSeqRes(date, drive, output_dir=self.out_dir)
                     curr_seq.add_local_prediction(velo_ts[0], 0., gt_global[0], gt_global[0])
+
                     # add the file name and file-pointer to the list
                     seq_names.append(seq_name)
 
-                #gt_local = gt_pos[0].detach().cpu().squeeze().numpy()
+                gt_local = gt_pos.detach().cpu().squeeze()
+                gt_rot = gt_rot.detach().cpu().squeeze()
+
                 T_local = np.identity(4)
-                T_local[:3, 3] = pred_x.detach().cpu().squeeze().numpy()
-                T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q.detach().cpu().squeeze()).numpy()
+                T_local[:3, 3] = gt_local.numpy() # pred_x.detach().cpu().squeeze().numpy()
+                T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_rot).numpy() # spatial.quaternion_to_rotation_matrix(pred_q.detach().cpu().squeeze()).numpy()
+                T_local = gts.detach().cpu().squeeze().numpy()
                 curr_seq.add_local_prediction(velo_ts[1], losses.avg, T_local, gt_global[-1])
 
                 last_seq = curr_seq
@@ -192,12 +197,11 @@ class Tester(Worker):
                     self.tensor_writer.add_scalar\
                         ("Loss test", losses.avg, step_val)
                     self.tensor_writer.flush()
+                if idx > 120:
+                    break
 
         if curr_seq is not None:
             curr_seq.write_to_file()
-            if self.args.plot:
-                curr_seq.save_plot()
-
 
 class OdomSeqRes:
     def __init__(self, date, drive, output_dir="."):
@@ -217,13 +221,13 @@ class OdomSeqRes:
 
     def write_to_file(self):
         T_glob_pred = []
-        T0 = self.T_local_pred[0]
-        T_glob_pred.append(T0)
+        T_0i = self.T_local_pred[0]
+        T_glob_pred.append(T_0i)
         for i in range(1, len(self.T_local_pred)):
             T_i = self.T_local_pred[i]
-            T = np.matmul(T0, T_i)
+            T = np.matmul(T_0i, T_i)
             T_glob_pred.append(T)
-            T0 = np.copy(T)
+            T_0i = np.copy(T)
         self.T_global = np.array(self.T_global)
         self.T_local_pred = np.array(self.T_local_pred)
         T_glob_pred = np.array(T_glob_pred)
@@ -241,10 +245,14 @@ class OdomSeqRes:
         np.savetxt(fname, res, fmt='%.5f', delimiter=',')
 
         fname = "{}/{}_{}.png".format(self.out_dir, self.date, self.drive)
-        plt.plot(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5)
-        plt.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5)
+        plt.plot(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5, label="GT")
+        plt.scatter(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5, s=0.5)
+        plt.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, label="Predicted")
+        plt.scatter(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, s=0.5)
+
         plt.grid()
-        plt.savefig(fname)
+        plt.legend()
+        plt.savefig(fname, figsize=(50, 50), dpi=300)
 
 
 

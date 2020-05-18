@@ -291,7 +291,7 @@ class Trainer(Worker):
                 gt_rot = spatial.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
 
                 # compute model predictions and loss
-                pred_x, pred_q = model([imgs_0, imgs_1])
+                pred_x, pred_q, _, _ = model([imgs_0, imgs_1])
                 loss = criterion(pred_x, pred_q, gt_pos, gt_rot)
 
                 # measure accuracy and record loss
