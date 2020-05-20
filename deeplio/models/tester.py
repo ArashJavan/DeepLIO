@@ -171,9 +171,6 @@ class Tester(Worker):
                     if last_seq is not None:
                         last_seq.write_to_file()
 
-                        if self.args.plot:
-                            last_seq.save_plot()
-
                     curr_seq = OdomSeqRes(date, drive, output_dir=self.out_dir)
                     curr_seq.add_local_prediction(velo_ts[0], 0., gt_global[0], gt_global[0])
 
@@ -202,6 +199,7 @@ class Tester(Worker):
 
         if curr_seq is not None:
             curr_seq.write_to_file()
+
 
 class OdomSeqRes:
     def __init__(self, date, drive, output_dir="."):

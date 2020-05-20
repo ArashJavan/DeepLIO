@@ -64,3 +64,11 @@ class PyLogger(object):
 
 
 global_logger = None
+
+
+def get_app_logger(name="deeplio", filename="deeplio.txt", level=logging.DEBUG):
+    global global_logger
+
+    if global_logger is None:
+        global_logger = PyLogger(name=name, filename=filename, level=level)
+    return global_logger

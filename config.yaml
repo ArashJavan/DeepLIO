@@ -1,5 +1,5 @@
 datasets:
-    sequence-size: 2 # must be >= 2
+    sequence-size: 3 # must be >= 2
     kitti:
       root-path: "/media/ajava/Data/Datasets/KITTI/"
       image-width: 1800
@@ -15,7 +15,8 @@ datasets:
         2011-09-30: [16, 18, 20, 27]
       test:
         # 2011-09-30: [33, 34]
-        2011-10-03: [42]
+        2011-10-03: [27]
+        # 2011-10-03: [42]
       validation:
         2011-09-26: [32, 46]
 

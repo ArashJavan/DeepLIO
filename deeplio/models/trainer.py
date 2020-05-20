@@ -13,9 +13,6 @@ from torchvision import transforms
 from torch import optim
 from torchvision.utils import make_grid
 
-import tensorboardX
-from tensorboardX import SummaryWriter
-
 from pytorch_model_summary import summary
 
 from deeplio import datasets as ds
@@ -68,7 +65,7 @@ class Trainer(Worker):
                                                           worker_init_fn=worker_init_fn,
                                                           collate_fn = ds.deeplio_collate)
 
-        self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=True)
+        self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=False)
         self.model = nets.DeepLIOS0(input_shape=(self.im_height_model, self.im_width_model,
                                                  self.n_channels), cfg=self.cfg['arch'])
         self.model.to(self.device) #should be before creating optimizer
@@ -76,8 +73,6 @@ class Trainer(Worker):
         self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
         self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.1)
         self.criterion = get_loss_function(self.cfg, args.device)
-
-        self.tensor_writer = SummaryWriter(log_dir=self.runs_dir)
 
         # debugging and visualizing
         self.logger.print("DeepLIO Training Configurations:")
@@ -222,6 +217,24 @@ class Trainer(Worker):
             end = time.time()
 
             if idx % self.args.print_freq == 0:
+
+                if idx % (50 * self.args.print_freq) == 0:
+                    # print some prediction results
+                    x = pred_x[0:2].detach().cpu().flatten()
+                    q = pred_q[0:2].detach().cpu().flatten()
+                    x_gt = gt_pos[0:2].detach().cpu().flatten()
+                    q_gt = gt_rot[0:2].detach().cpu().flatten()
+
+                    self.logger.print("x-hat: [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]"
+                                      "\nx-gt:  [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]".
+                                      format(x[0], x[1], x[2], x[3], x[4], x[5],
+                                             x_gt[0], x_gt[2], x_gt[2], x_gt[3], x_gt[4], x_gt[5]))
+
+                    self.logger.print("q-hat: [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]"
+                                      "\nq-gt:  [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]".
+                                      format(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7],
+                                             q_gt[0], q_gt[1], q_gt[2], q_gt[3], q_gt[4],q_gt[5], q_gt[6], q_gt[7]))
+
                 progress.display(idx)
 
                 ### update tensorboard

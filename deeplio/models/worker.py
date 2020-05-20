@@ -11,6 +11,8 @@ import numpy as np
 import torch
 from torch.backends import cudnn
 
+from tensorboardX import SummaryWriter
+
 from deeplio.common import *
 
 SEED = 42
@@ -71,6 +73,8 @@ class Worker:
         Path(self.runs_dir).mkdir(parents=True, exist_ok=True)
         Path(log_dir).mkdir(parents=True, exist_ok=True)
 
+        self.tensor_writer = SummaryWriter(log_dir=self.runs_dir)
+
         torch.cuda.empty_cache()
         cudnn.benchmark = True
 
@@ -94,9 +98,11 @@ class Worker:
 
         # give some times to porcesses and loops to finish
         time.sleep(0.5)
-
-        self.tensor_writer.close()
         self.logger.close()
+
+        if self.tensor_writer:
+            self.tensor_writer.close()
+
 
 
 class AverageMeter(object):
