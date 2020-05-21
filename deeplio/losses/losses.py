@@ -13,16 +13,29 @@ from deeplio.common.spatial import normalize_quaternion, quaternion_to_rotation_
 class LWSLoss(nn.Module):
     """Linear weighted sum loss
     """
-    def __init__(self, beta=1125.):
+    def __init__(self, beta=1125., gamma=1., q_norm_loss=False, ):
         super(LWSLoss, self).__init__()
         self.loss_fn = nn.MSELoss()
         self.beta = beta
+        self.gamma = gamma
+        self.q_norm_loss = q_norm_loss
 
     def forward(self, x_pred, q_pred, x_gt, q_gt):
+        device = x_pred.device
+
         x_hat = x_pred
         q_hat = normalize_quaternion(q_pred)
 
-        loss = self.loss_fn(x_hat, x_gt) + self.beta * self.loss_fn(q_hat, q_gt)
+        x_loss = self.loss_fn(x_hat, x_gt)
+        q_loss = self.loss_fn(q_hat, q_gt)
+        if self.q_norm_loss:
+            qn_loss = self.loss_fn(q_pred.norm(dim=1), torch.ones(len(q_hat), requires_grad=False).to(device=device))
+
+        if self.q_norm_loss:
+            loss = x_loss + self.beta * q_loss + self.gamma * qn_loss
+        else:
+            loss = x_loss + self.beta * q_loss
+
         return loss
 
 

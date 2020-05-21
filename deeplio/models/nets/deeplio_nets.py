@@ -93,7 +93,7 @@ class DeepLIOS0(BaseNet):
 
         # Siamese sqeeuze feature extraction networks
         self.siamese_net1 = self.create_inner_net(channels=self.c)
-        self.siamese_net2 = self.create_inner_net(channels=self.c)
+        #self.siamese_net2 = self.create_inner_net(channels=self.c)
 
         # in-feature size autodetection
         self.siamese_net1.eval()
@@ -132,11 +132,7 @@ class DeepLIOS0(BaseNet):
                 nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
                 nn.ReLU(True),
                 nn.BatchNorm2d(64),
-
-                nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
-                nn.ReLU(True),
-                nn.BatchNorm2d(64),
-                nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True),
+                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
 
                 nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
                 nn.ReLU(True),
@@ -157,7 +153,7 @@ class DeepLIOS0(BaseNet):
         imgs_1 = images[1]
 
         out_0 = self.siamese_net1(imgs_0)
-        out_1 = self.siamese_net2(imgs_1)
+        out_1 = self.siamese_net1(imgs_1)
         out = torch.cat((out_1, out_0), dim=1)
         out = out.view(-1, num_flat_features(out))
 
@@ -222,11 +218,7 @@ class DeepLIOS01(BaseNet):
                 nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
                 nn.ReLU(True),
                 nn.BatchNorm2d(64),
-
-                nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
-                nn.ReLU(True),
-                nn.BatchNorm2d(64),
-                nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True),
+                nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True),
 
                 nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1),
                 nn.ReLU(True),

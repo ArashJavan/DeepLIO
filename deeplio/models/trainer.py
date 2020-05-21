@@ -54,7 +54,7 @@ class Trainer(Worker):
         self.train_dataset = ds.Kitti(config=self.cfg, transform=transform)
         self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
                                                             num_workers=self.num_workers,
-                                                            shuffle=False,
+                                                            shuffle=True,
                                                             worker_init_fn=worker_init_fn,
                                                             collate_fn=ds.deeplio_collate)
 
@@ -65,7 +65,7 @@ class Trainer(Worker):
                                                           worker_init_fn=worker_init_fn,
                                                           collate_fn = ds.deeplio_collate)
 
-        self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=False)
+        self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=True)
         self.model = nets.DeepLIOS0(input_shape=(self.im_height_model, self.im_width_model,
                                                  self.n_channels), cfg=self.cfg['arch'])
         self.model.to(self.device) #should be before creating optimizer
@@ -218,7 +218,7 @@ class Trainer(Worker):
 
             if idx % self.args.print_freq == 0:
 
-                if idx % (50 * self.args.print_freq) == 0:
+                if idx % (5 * self.args.print_freq) == 0:
                     # print some prediction results
                     x = pred_x[0:2].detach().cpu().flatten()
                     q = pred_q[0:2].detach().cpu().flatten()
@@ -230,8 +230,8 @@ class Trainer(Worker):
                                       format(x[0], x[1], x[2], x[3], x[4], x[5],
                                              x_gt[0], x_gt[2], x_gt[2], x_gt[3], x_gt[4], x_gt[5]))
 
-                    self.logger.print("q-hat: [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]"
-                                      "\nq-gt:  [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]".
+                    self.logger.print("q-hat: [{:.4f},{:.4f},{:.4f},{:.4}], [{:.4f},{:.4f},{:.4f},{:.4}]"
+                                      "\nq-gt:  [{:.4f},{:.4f},{:.4f},{:.4}], [{:.4f},{:.4f},{:.4f},{:.4}]".
                                       format(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7],
                                              q_gt[0], q_gt[1], q_gt[2], q_gt[3], q_gt[4],q_gt[5], q_gt[6], q_gt[7]))
 
