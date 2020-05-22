@@ -104,6 +104,7 @@ class GeometricConsistencyLoss(nn.Module):
             weights = torch.exp(torch.abs(img1_range_dalpha) + torch.abs(img1_range_dbeta))
             l_n = weights * torch.norm(delta_normals, p=1) # * pred_mask1
             l_n = torch.sum(l_n)
+
             return l_n
 
     def do_spherical_projection(self, x):
@@ -167,8 +168,8 @@ class GeometricConsistencyLoss(nn.Module):
         proj_y = proj_y[order]
         proj_x = proj_x[order]
 
-        proj_y_detached = proj_y.type(torch.long).detach()
-        proj_x_detached = proj_x.type(torch.long).detach()
+        proj_y_detached = proj_y.type(torch.long)
+        proj_x_detached = proj_x.type(torch.long)
 
         proj_range[proj_y_detached, proj_x_detached] = depth
         proj_xyz[proj_y_detached, proj_x_detached] = points

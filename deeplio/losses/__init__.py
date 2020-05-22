@@ -1,10 +1,10 @@
-from .losses import HWSLoss, LWSLoss
+from .losses import HWSLoss, LWSLoss, GeometricConsistencyLoss
 
 
 def get_loss_function(cfg, device):
     loss_cfg = cfg['losses']
     loss_name = loss_cfg['active'].lower()
-    loss_type = loss_cfg[loss_name]
+    loss_type = loss_cfg.get(loss_name, {})
     params = loss_type.get('params', {})
 
     if loss_name == 'hwsloss':
@@ -15,5 +15,7 @@ def get_loss_function(cfg, device):
     elif loss_name == 'lwsloss':
         beta = params.get('beta', 1125.)
         return LWSLoss(beta=beta)
+    elif loss_name == 'geoloss':
+        return GeometricConsistencyLoss()
     else:
-        raise ValueError("Loss {} is not supported!".format(loss_type))
+        raise ValueError("Loss {} is not supported!".format(loss_name))

@@ -1,82 +1,121 @@
 import os
 import sys
-import shutil
 import yaml
 import argparse
-from multiprocessing import Pool, Lock
 
+from tqdm import tqdm
 
-dname = os.path.dirname(__file__)
-module_dir = os.path.abspath("{}/..".format(dname))
-content_dir = os.path.abspath("{}/..".format(module_dir))
+import numpy as np
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
+from matplotlib import cm
+
+dname = os.path.abspath('')
+module_dir = os.path.abspath("{}/../deeplio".format(dname))
+content_dir = os.path.abspath("{}/..".format(dname))
 sys.path.append(dname)
 sys.path.append(module_dir)
 sys.path.append(content_dir)
 
-import tqdm
 
-import numpy as np
+import logging
+import datetime
+from pathlib import Path
 
-import matplotlib
-import matplotlib.pyplot as plt
+import torch.utils.data
+import torch.nn.functional as F
 
-import w
-from deeplio.datasets import KittiRawData
-
-CHANNEL_NAMES = ['x', 'y', 'z', 'remission', 'rang', 'depth']
-CHANNEL_CMAP = ['jet', 'jet', 'jet', 'jet', 'nipy_spectral', 'jet']
-PIVOT = 100
-images_path = "./images"
-
-def run_job(args):
-    bar_pos = args[0]
-    dataset = args[1]
-
-    length = len(dataset)
-    num_channels = len(CHANNEL_NAMES)
-
-    counter = 0
-
-    # creatin folder for saveing images
-    folder_path = "{}/{}_{}".format(images_path, dataset.date, dataset.drive)
-    try:
-        shutil.rmtree(folder_path)
-    except:
-        pass
-
-    os.makedirs(folder_path)
-
-    for i in tqdm.trange(length, desc=dataset.data_path, position=bar_pos):
-        im = dataset.get_velo_image(i)
-        if i % PIVOT == 0:
-            for c in range(num_channels):
-                plt.imsave("{}/{}_{}.png".format(folder_path, CHANNEL_NAMES[c], i), np.absolute(im[:, :, c]), cmap=CHANNEL_CMAP[c])
+from deeplio.common.logger import PyLogger, get_app_logger
+from deeplio.datasets import Kitti, deeplio_collate, KittiRawData
 
 
 def main(args):
-    global images_path
-
     with open(args['config']) as f:
-        config = yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
 
-    images_path = args['path']
-
-    print("Saveing Projected Lidar Frames as Images.\n args: {}".format(args))
-
-    ds_config = config['datasets']['kitti']
-    root_path = ds_config['root-path']
+    # extracting infos from config file
+    ds_cfg = cfg['datasets']
+    kitti_config = ds_cfg['kitti']
+    seq_size = ds_cfg['sequence-size']
+    root_path = kitti_config['root-path']
 
     ds_type = "train"
-    num_channels = len(CHANNEL_NAMES)
 
-    datasets = [KittiRawData(root_path, str(date), str(drive), ds_config) for date, drives in ds_config[ds_type].items()
-                for drive in drives]
-    n_worker = len(datasets)
-    counters = list(range(n_worker))
+    batch_size = 1
+    num_workers = 8
 
-    procs = Pool(processes=n_worker, initializer=tqdm.tqdm.set_lock, initargs=(tqdm.tqdm.get_lock(),))
-    procs.map(run_job, zip(counters, datasets))
-    procs.close()
+
+    OUTPUT_PATH = "{}/outputs/images".format(content_dir)
+
+    # create directoy to save images
+    Path(OUTPUT_PATH).mkdir(parents=True, exist_ok=True)
+
+    # max. number of image swe want to save
+    max_num_it = -1
+
+    # Dataset class needs a global logger, so creat it here
+    # TODO: Remove dependecy of dataset to global logger, so it can have its own
+    flog_name = "{}/{}_{}.log".format(OUTPUT_PATH, "Dataset-Visualization",
+                                      datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+    get_app_logger(filename=flog_name, level=logging.INFO)
+
+    # create dataset andataloader
+    kitti_dataset = Kitti(config=cfg, transform=None, ds_type='train')
+    dataloader = torch.utils.data.DataLoader(kitti_dataset, batch_size=batch_size,
+                                             num_workers=num_workers,
+                                             shuffle=False,
+                                             collate_fn=deeplio_collate)
+    print("Length of dataset is {}".format(len(dataloader)))
+
+    pbar = tqdm(total=len(dataloader))
+
+    # Iterate through datset and save images
+    for idx, data in enumerate(dataloader):
+        # skip invalid data without ground-truth
+        if not torch.all(data['valid']):
+            pbar.update(1)
+            # print("[{}] Invalid!".format(idx))
+            continue
+
+        metas = data['metas'][0]
+        index = metas['index'][0]
+        date = metas['date'][0]
+        drive = metas['drive'][0]
+
+        ims = data['images'].detach().cpu()
+        for b in range(len(ims)):
+            ims_batch = ims[b]
+            ims_depth = [F.pad(im, (0, 0, 10, 0)) for im in ims_batch[:, 0, :, :]]
+            ims_depth = torch.cat(ims_depth, dim=0)
+
+            ims_remission = [F.pad(im, (0, 0, 10, 0)) for im in ims_batch[:, 1, :, :]]
+            ims_remission = torch.cat(ims_remission, dim=0)
+
+            fig, ax = plt.subplots(3, 1)
+            ax[0].set_title("Depth, mean:{:.4f}, std:{:.4f}".format(ims_depth.mean(), ims_depth.std()), fontsize=5)
+            ax[0].axis('off')
+            ax[0].imshow(ims_depth)
+
+            ax[1].set_title("Remission, mean:{:.4f}, std:{:.4f}".format(ims_remission.mean(), ims_remission.std()),
+                            fontsize=5)
+            ax[1].imshow(ims_remission)
+            ax[1].axis('off')
+
+            ax[2].hist(ims_depth.flatten(), bins=50, alpha=0.5, label="depth", density=True)
+            ax[2].hist(ims_remission.flatten(), bins=50, alpha=0.5, label="remission", density=True)
+            ax[2].legend()
+
+            fname = "{}/{}_{}_{}.png".format(OUTPUT_PATH, index, date, drive)
+            # print("[{}] Saving {}".format(idx, fname))
+            fig.savefig(fname, dpi=300)
+            plt.close(fig)
+
+        pbar.update(1)
+        if max_num_it > 0 and idx > max_num_it:
+            break
+
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DeepLIO Training')

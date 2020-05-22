@@ -33,13 +33,13 @@ arch:
 
   feature-net:
     name: "pointseg"
-    pretrained: False
+    pretrained: true
     model-path: "resources/checkpoint_30_20200504_161441.tar"
     dropout: 0.25
     classes: ['unknown', 'car', 'pedestrian', 'cyclist']
 
 losses:
-  active: 'lwsloss'
+  active: 'geoloss'
   hwsloss:
     params:
       learn: true
@@ -48,6 +48,9 @@ losses:
   lwsloss:
     params:
       beta: 1125.
+  geoloss:
+    params:
+
 
 current-dataset: 'kitti'
 channels: [3, 4] # channesl: x=0, y=1, z=2, range(x,y,z)=3, remissions=4

@@ -66,7 +66,7 @@ class Trainer(Worker):
                                                           collate_fn = ds.deeplio_collate)
 
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=True)
-        self.model = nets.DeepLIOS0(input_shape=(self.im_height_model, self.im_width_model,
+        self.model = nets.DeepLIOS3(input_shape=(self.im_height_model, self.im_width_model,
                                                  self.n_channels), cfg=self.cfg['arch'])
         self.model.to(self.device) #should be before creating optimizer
 
@@ -200,8 +200,8 @@ class Trainer(Worker):
             gt_rot = spatial.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
 
             # compute model predictions and loss
-            pred_x, pred_q, _, _ = model([imgs_0, imgs_1])
-            loss = criterion(pred_x, pred_q, gt_pos, gt_rot)
+            pred_x, pred_q, mask0, mask1 = model([imgs_0, imgs_1])
+            loss = criterion(pred_x, pred_q, mask0, mask1, imgs_untrans_0, imgs_untrans_1, gt_pos, gt_rot)
 
             # measure accuracy and record loss
             losses.update(loss.detach().item(), len(pred_x))
