@@ -141,14 +141,21 @@ class Tester(Worker):
                 imus = [imu.to(self.device, non_blocking=True) for imu in imus]
 
                 # prepare ground truth tranlational and rotational part
-                gt_pos = gts[:, :3, 3].contiguous()
-                gt_rot = spatial.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
+                gt_x = gts[:, :3, 3].contiguous()
+                gt_q = spatial.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
 
                 # compute model predictions and loss
                 pred_x, pred_q, _, _ = model([imgs_0, imgs_1])
-                #self.logger.info("px: {}, gx: {}".format(pred_x.detach().cpu().numpy(), gt_pos.detach().cpu().numpy()))
-                #self.logger.info("pq: {}, gq: {}".format(pred_q.detach().cpu().numpy(), gt_rot.detach().cpu().numpy()))
-                loss = criterion(pred_x, pred_q, gt_pos, gt_rot)
+
+                pred_q_norm = spatial.normalize_quaternion(pred_q)
+                pred_axis_angle = spatial.quaternion_to_angle_axis(pred_q_norm)
+                gt_axis_angle = spatial.quaternion_to_angle_axis(gt_q)
+
+                #self.logger.print("px: {}\ngx: {}".format(pred_x.detach().cpu().numpy(), gt_x.detach().cpu().numpy()))
+                #self.logger.print("pq: {}\ngq: {}".format(pred_axis_angle.detach().cpu().tolist(), gt_axis_angle.detach().cpu().tolist()))
+                #self.logger.print("pq: {}\ngq: {}".format(pred_q.detach().cpu().tolist(), gt_q.detach().cpu().tolist()))
+
+                loss = criterion(pred_x, pred_q, gt_x, gt_q)
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), len(pred_x))
@@ -177,13 +184,13 @@ class Tester(Worker):
                     # add the file name and file-pointer to the list
                     seq_names.append(seq_name)
 
-                gt_local = gt_pos.detach().cpu().squeeze()
-                gt_rot = gt_rot.detach().cpu().squeeze()
+                gt_local = gt_x.detach().cpu().squeeze()
+                gt_q = gt_q.detach().cpu().squeeze()
 
                 T_local = np.identity(4)
-                T_local[:3, 3] = gt_local.numpy() # pred_x.detach().cpu().squeeze().numpy()
-                T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_rot).numpy() # spatial.quaternion_to_rotation_matrix(pred_q.detach().cpu().squeeze()).numpy()
-                T_local = gts.detach().cpu().squeeze().numpy()
+                T_local[:3, 3] = pred_x.detach().cpu().squeeze().numpy() #  gt_local.numpy()
+                T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q.detach().cpu().squeeze()).numpy() #  spatial.quaternion_to_rotation_matrix(gt_q).numpy()
+                # T_local = gts.detach().cpu().squeeze().numpy()
                 curr_seq.add_local_prediction(velo_ts[1], losses.avg, T_local, gt_global[-1])
 
                 last_seq = curr_seq
@@ -194,8 +201,9 @@ class Tester(Worker):
                     self.tensor_writer.add_scalar\
                         ("Loss test", losses.avg, step_val)
                     self.tensor_writer.flush()
-                if idx > 120:
-                    break
+
+                #if idx > 20:
+                #    break
 
         if curr_seq is not None:
             curr_seq.write_to_file()
@@ -243,14 +251,14 @@ class OdomSeqRes:
         np.savetxt(fname, res, fmt='%.5f', delimiter=',')
 
         fname = "{}/{}_{}.png".format(self.out_dir, self.date, self.drive)
-        plt.plot(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5, label="GT")
+        plt.plot(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5, label="GT-global")
         plt.scatter(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5, s=0.5)
-        plt.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, label="Predicted")
+        plt.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, label="GT-local")
         plt.scatter(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, s=0.5)
 
         plt.grid()
         plt.legend()
-        plt.savefig(fname, figsize=(50, 50), dpi=300)
+        plt.savefig(fname, figsize=(50, 50), dpi=600)
 
 
 

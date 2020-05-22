@@ -11,5 +11,7 @@ def create_optimizer(params, cfg, args, **kwargs):
         return optim.Adam(params, lr=args.lr,  weight_decay=args.weight_decay, **kwargs)
     elif optim_type == 'rmsprop':
         return optim.RMSprop(params, lr=args.lr, weight_decay=args.weight_decay, **kwargs)
+    elif optim_type == 'adadelta':
+        return optim.Adadelta(params, lr=args.lr, weight_decay=args.weight_decay, **kwargs)
     else:
         raise ValueError("Optimizer {} not supported!".format(optim_type))

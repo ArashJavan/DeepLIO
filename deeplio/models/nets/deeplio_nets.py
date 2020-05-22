@@ -103,7 +103,7 @@ class DeepLIOS0(BaseNet):
             _, c, h, w = x.shape
             self.fc_in_shape = (c, h, w)
 
-        self.fc1 = nn.Linear(2*c*h*w, 256)
+        self.fc1 = nn.Linear(1*c*h*w, 256)
         self.fc2 = nn.Linear(256, 128)
         self.fc3 = nn.Linear(128, 32)
 
@@ -154,7 +154,7 @@ class DeepLIOS0(BaseNet):
 
         out_0 = self.siamese_net1(imgs_0)
         out_1 = self.siamese_net1(imgs_1)
-        out = torch.cat((out_1, out_0), dim=1)
+        out = torch.sub(out_1, out_0) # torch.cat((out_1, out_0), dim=1)
         out = out.view(-1, num_flat_features(out))
 
         out = F.relu(self.fc1(out))

@@ -71,7 +71,7 @@ class Trainer(Worker):
         self.model.to(self.device) #should be before creating optimizer
 
         self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
-        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.1)
+        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.5)
         self.criterion = get_loss_function(self.cfg, args.device)
 
         # debugging and visualizing
