@@ -1,7 +1,8 @@
 datasets:
-    sequence-size: 3 # must be >= 2
+    sequence-size: 2 # must be >= 2
     kitti:
-      root-path: "/media/ajava/Data/Datasets/KITTI/"
+      root-path-sync: "/media/ajava/Data/Datasets/KITTI/sync"
+      root-path-unsync: "/media/ajava/Data/Datasets/KITTI/unsync"
       image-width: 1800
       image-height: 64
       crop-factors: [0, 4] # top, left

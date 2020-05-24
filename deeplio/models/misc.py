@@ -1,7 +1,7 @@
 import random
 import torch
 
-from deeplio.common.spatial import inv_SE3
+from deeplio.common.spatial import inv_SE3, rotation_matrix_to_quaternion
 
 import math
 import numpy as np
@@ -34,8 +34,8 @@ class PostProcessSiameseData(object):
                 random.shuffle(combinations)
             self.combinations.extend(combinations)
 
-            T_gt = self.calc_trans_mat_combis(gts, combinations)
-            res_gt.extend(T_gt)
+            gts = self.process_ground_turth(gts, combinations)
+            res_gt.extend(gts)
 
             for j, combi in enumerate(combinations):
                 idx_0 = combi[0]
@@ -63,21 +63,32 @@ class PostProcessSiameseData(object):
         res_imu = [torch.stack(imu) for imu in res_imu]
         return res_im_0, res_im_1, res_untrans_im_0, res_untrans_im_1, res_gt, res_imu
 
-    def calc_trans_mat_combis(self, transformations, combinations):
+    def process_ground_turth(self, gts, combinations):
         T_global = []
-        for i in range(self.seq_size):
-            if i == 0:
-                T_global.append(transformations[i][0])
-            else:
-                T_global.append(transformations[i-1][-1])
-        T = []
+        v_global = []
+
+        for gt in gts:
+            t = gt[0:3]
+            R = gt[3:12].reshape(3, 3)
+            T = torch.eye(4)
+            T[:3, 3] = t
+            T[:3, :3] = R
+            T_global.append(T)
+            v = gt[12:]
+            v_global.append(v)
+
+        state_local = []
         for combi in combinations:
             T_i = T_global[combi[0]]
             T_i_inv = inv_SE3(T_i)
             T_ip1 = T_global[combi[1]]
             T_i_ip1 = torch.matmul(T_i_inv, T_ip1)
-            T.append(T_i_ip1)
-        return T
+            dx = T_i_ip1[:3, 3].contiguous()
+            dq = rotation_matrix_to_quaternion(T_i_ip1[:3, :3].contiguous())
+            dv = v_global[combi[1]] - v_global[combi[0]]
+            state_local.append(torch.cat([dx, dq, dv]))
+
+        return torch.stack(state_local)
 
     def __call__(self, args):
         return self.process(args)

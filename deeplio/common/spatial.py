@@ -742,6 +742,7 @@ def inv_SE3(T):
     """
     # convert to numpy, since numpy float ops seems to be more precise
     # see @https://github.com/pytorch/pytorch/issues/17678
+    T_ = T
     if isinstance(T, torch.Tensor):
         T_ = T.numpy()
 

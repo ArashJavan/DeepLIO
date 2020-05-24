@@ -15,10 +15,9 @@ def deeplio_collate(batch):
     # IMU and ground-truth measurments can have different length btw. each pair of lidar frames,
     # so we do not change their size and let them as their are
     imus = [b['imus'] for b in batch]
-    gts = [b['gts'] for b in batch]
+    gts = torch.stack([b['gts'] for b in batch])
 
     # also vladiation field and meta-datas need not to be changed
-    valids = torch.tensor([b['valid'] for b in batch])
     metas = [b['meta'] for b in batch]
 
     res ={}
@@ -26,7 +25,6 @@ def deeplio_collate(batch):
     res['untrans-images'] = untrans_images
     res['imus'] = imus
     res['gts'] = gts
-    res['valid'] = valids
     res['metas'] = metas
     return res
 

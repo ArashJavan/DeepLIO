@@ -11,22 +11,30 @@ import numpy as np
 
 import torch.utils.data as data
 
-from deeplio.common import utils
+from deeplio.common import utils, logger
 from deeplio.common.laserscan import LaserScan
-from deeplio.common import logger
+from deeplio.common.spatial import rotation_matrix_to_quaternion
 
 
 class KittiRawData:
     """ KiitiRawData
     more or less same as pykitti with some application specific changes
     """
-    def __init__(self, base_path, date, drive, cfg=None, oxts_bin=False, oxts_txt=False, max_points=150000, **kwargs):
+    def __init__(self, base_path_sync, base_path_unsync, date, drive,
+                 cfg=None, oxts_bin=False, oxts_txt=False, max_points=150000, **kwargs):
         self.drive = drive
         self.date = date
-        self.dataset = kwargs.get('dataset', 'extract')
-        self.drive_full = date + '_drive_' + drive + '_' + self.dataset
-        self.calib_path = os.path.join(base_path, date)
-        self.data_path = os.path.join(base_path, date, self.drive_full)
+
+        self.dataset_sync = 'sync'
+        self.dataset_unsync = 'extract'
+        self.drive_full_sync = date + '_drive_' + drive + '_' + self.dataset_sync
+        self.drive_full_unsync = date + '_drive_' + drive + '_' + self.dataset_unsync
+
+        self.calib_path = os.path.join(base_path_sync, date)
+
+        self.data_path_sync = os.path.join(base_path_sync, date, self.drive_full_sync)
+        self.data_path_unsync = os.path.join(base_path_unsync, date, self.drive_full_unsync)
+
         self.frames = kwargs.get('frames', None)
         self.max_points = max_points
 
@@ -36,7 +44,6 @@ class KittiRawData:
             self.image_height = ds_config.get('image-height', 64)
             self.fov_up = ds_config.get('fov-up', 3)
             self.fov_down = ds_config.get('fov-down', -25)
-            self.seq_size = cfg.get('sequence-size', 2)
             self.max_depth = ds_config.get('max-depth', 80)
             self.min_depth = ds_config.get('min-depth', 2)
 
@@ -78,12 +85,12 @@ class KittiRawData:
     def _get_velo_files(self):
         # first try to get binary files
         self.velo_files = sorted(glob.glob(
-            os.path.join(self.data_path, 'velodyne_points',
-                         'data', '*.npy')))
+            os.path.join(self.data_path_sync, 'velodyne_points',
+                         'data', '*.bin')))
         # if there is no bin files for velo, so the velo file are in text format
         if self.velo_files is None:
             self.velo_files = sorted(glob.glob(
-                os.path.join(self.data_path, 'velodyne_points',
+                os.path.join(self.data_path_unsync, 'velodyne_points',
                              'data', '*.txt')))
 
         # Subselect the chosen range of frames, if any
@@ -94,13 +101,21 @@ class KittiRawData:
 
     def _get_oxt_files(self):
         """Find and list data files for each sensor."""
-        self.oxts_files = sorted(glob.glob(
-            os.path.join(self.data_path, 'oxts', 'data', '*.txt')))
+        self.oxts_files_sync = sorted(glob.glob(
+            os.path.join(self.data_path_sync, 'oxts', 'data', '*.txt')))
 
         if self.frames is not None:
-            self.oxts_files = utils.subselect_files(
-                self.oxts_files, self.frames)
-        self.oxts_files = np.asarray(self.oxts_files)
+            self.oxts_files_sync = utils.subselect_files(
+                self.oxts_files_sync, self.frames)
+        self.oxts_files_sync = np.asarray(self.oxts_files_sync)
+
+        self.oxts_files_unsync = sorted(glob.glob(
+            os.path.join(self.data_path_unsync, 'oxts', 'data', '*.txt')))
+
+        if self.frames is not None:
+            self.oxts_files_unsync = utils.subselect_files(
+                self.oxts_files_unsync, self.frames)
+        self.oxts_files_unsync = np.asarray(self.oxts_files_unsync)
 
     def _load_calib_rigid(self, filename):
         """Read a rigid transform calibration file as a numpy.array."""
@@ -119,19 +134,20 @@ class KittiRawData:
 
     def _load_timestamps(self):
         """Load timestamps from file."""
-        timestamp_file_imu = os.path.join(self.data_path, 'oxts', 'timestamps.txt')
-        timestamp_file_velo = os.path.join(self.data_path, 'velodyne_points', 'timestamps.txt')
+        timestamp_file_unsync = os.path.join(self.data_path_unsync, 'oxts', 'timestamps.txt')
+        timestamp_file_velo = os.path.join(self.data_path_sync, 'velodyne_points', 'timestamps.txt')
+        timestamp_file_sync = os.path.join(self.data_path_sync, 'oxts', 'timestamps.txt')
 
         # Read and parse the timestamps
-        self.timestamps_imu = []
-        with open(timestamp_file_imu, 'r') as f:
+        self.timestamps_unsync = []
+        with open(timestamp_file_unsync, 'r') as f:
             for line in f.readlines():
                 # NB: datetime only supports microseconds, but KITTI timestamps
                 # give nanoseconds, so need to truncate last 4 characters to
                 # get rid of \n (counts as 1) and extra 3 digits
                 t = dt.datetime.strptime(line[:-4], '%Y-%m-%d %H:%M:%S.%f')
-                self.timestamps_imu.append(t)
-        self.timestamps_imu = np.array(self.timestamps_imu)
+                self.timestamps_unsync.append(t)
+        self.timestamps_unsync = np.array(self.timestamps_unsync)
 
         # Read and parse the timestamps
         self.timestamps_velo = []
@@ -144,17 +160,33 @@ class KittiRawData:
                 self.timestamps_velo.append(t)
         self.timestamps_velo = np.array(self.timestamps_velo)
 
+        # Read and parse the timestamps
+        self.timestamps_sync = []
+        with open(timestamp_file_sync, 'r') as f:
+            for line in f.readlines():
+                # NB: datetime only supports microseconds, but KITTI timestamps
+                # give nanoseconds, so need to truncate last 4 characters to
+                # get rid of \n (counts as 1) and extra 3 digits
+                t = dt.datetime.strptime(line[:-4], '%Y-%m-%d %H:%M:%S.%f')
+                self.timestamps_sync.append(t)
+        self.timestamps_sync = np.array(self.timestamps_sync)
+
     def _load_oxts(self):
         """Load OXTS data from file."""
-        self.oxts = np.array(utils.load_oxts_packets_and_poses(self.oxts_files))
+        self.oxts_sync = np.array(utils.load_oxts_packets_and_poses(self.oxts_files_sync))
+        self.oxts_unsync = np.array(utils.load_oxts_packets_and_poses(self.oxts_files_unsync))
 
     def _load_oxts_bin(self):
-        oxts_file = os.path.join(self.data_path, 'oxts', 'data.pkl')
-        with open(oxts_file, 'rb') as f:
-            self.oxts = pickle.load(f)
+        oxts_file_sync = os.path.join(self.data_path_sync, 'oxts', 'data.pkl')
+        with open(oxts_file_sync, 'rb') as f:
+            self.oxts_sync = pickle.load(f)
+
+        oxts_file_unsync = os.path.join(self.data_path_unsync, 'oxts', 'data.pkl')
+        with open(oxts_file_unsync, 'rb') as f:
+            self.oxts_unsync = pickle.load(f)
 
     def _load_oxts_lazy(self, indices):
-        oxts = utils.load_oxts_packets_and_poses(self.oxts_files[indices])
+        oxts = utils.load_oxts_packets_and_poses(self.oxts_files_sync[indices])
         return oxts
 
     def calc_gt_from_oxts(self, oxts):
@@ -203,7 +235,9 @@ class Kitti(data.Dataset):
         self.bins = []
         self.images = [None] * self.seq_size
 
-        root_path = ds_config['root-path']
+        root_path_sync = ds_config['root-path-sync']
+        root_path_unsync = ds_config['root-path-unsync']
+
         # Since we are intrested in sequence of lidar frame - e.g. multiple frame at each iteration,
         # depending on the sequence size and the current wanted index coming from pytorch dataloader
         # we must switch between each drive if not enough frames exists in that specific drive wanted from dataloader,
@@ -213,7 +247,7 @@ class Kitti(data.Dataset):
             for drive in drives:
                 date = str(date).replace('-', '_')
                 drive = '{0:04d}'.format(drive)
-                ds = KittiRawData(root_path, date, drive, ds_config_common, oxts_bin=True)
+                ds = KittiRawData(root_path_sync, root_path_unsync, date, drive, ds_config_common, oxts_bin=True)
 
                 length = len(ds)
 
@@ -232,6 +266,17 @@ class Kitti(data.Dataset):
 
         self.logger = logger.global_logger
 
+    def load_ground_truth(self, dataset, indices):
+        gts_alls = dataset.oxts_sync[indices]
+        gts = []
+        for gt in gts_alls:
+            T = gt[1]
+            x = T[:3, 3].flatten()
+            R = T[:3, :3].flatten()
+            v = np.array([gt[0].vf, gt[0].vl, gt[0].vu])
+            gts.append(np.hstack((x, R, v)))
+        return np.array(gts)
+
     def load_images(self, dataset, indices):
         threads = [None] * self.seq_size
 
@@ -245,6 +290,44 @@ class Kitti(data.Dataset):
     def load_image(self, dataset, ds_index, img_index):
         img = dataset.get_velo_image(ds_index)
         self.images[img_index] = img
+
+    def load_imus(self, dataset, velo_timestamps, ):
+        imus = []
+        for i in range(self.seq_size - 1):
+            velo_start_ts = velo_timestamps[i]
+            velo_stop_ts = velo_timestamps[i+1]
+
+            mask = ((dataset.timestamps_unsync >= velo_start_ts) & (dataset.timestamps_unsync < velo_stop_ts))
+            oxt_indices = np.argwhere(mask).flatten()
+            len_oxt = len(oxt_indices)
+
+            if (len_oxt== 0) or (len_oxt < self.MIN_NUM_OXT_SAMPLES):
+                self.logger.debug("Not enough OXT-samples: DS: {}_{}, len:{}, velo-timestamps: {}-{}".
+                                  format(dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
+                imu_values = np.zeros((self.MIN_NUM_OXT_SAMPLES, 6), dtype=np.float)
+            else:
+                oxts = dataset.oxts_unsync[oxt_indices]
+                imu_values = np.array([[oxt[0].ax, oxt[0].ay, oxt[0].az,
+                                        oxt[0].wx, oxt[0].wy, oxt[0].wz]
+                                       for oxt in oxts], dtype=np.float)
+            imus.append(imu_values)
+        return imus
+
+    def transform_images(self):
+        imgs_org = torch.stack([torch.from_numpy(im.transpose(2, 0, 1)) for im in self.images])
+
+        ct, cl = self.crop_top, self.crop_left
+        mean = torch.as_tensor(self.mean)
+        std = torch.as_tensor(self.std)
+        imgs_normalized = [torch.from_numpy(img[:, cl:-cl, :].transpose(2, 0, 1)) for img in self.images]
+        imgs_normalized = torch.stack(imgs_normalized)
+        if self.inv_depth:
+            im_depth = imgs_normalized[:, 3]
+            im_depth[im_depth > 0.] = 1 / im_depth[im_depth > 0.]
+        imgs_normalized.sub_(mean[None, :, None, None]).div_(std[None, :, None, None])
+        imgs_normalized = imgs_normalized[:, self.channels]
+        return imgs_org, imgs_normalized
+
 
     def __len__(self):
         return self.length
@@ -285,57 +368,15 @@ class Kitti(data.Dataset):
         velo_timespamps = [dataset.timestamps_velo[idx] for idx in indices]
 
         self.load_images(dataset, indices)
-        images = self.images
+        org_images, proc_images = self.transform_images()
 
-        imgs_org = torch.stack([torch.from_numpy(im.transpose(2, 0, 1)) for im in images])
-
-        ct, cl = self.crop_top, self.crop_left
-        mean = torch.as_tensor(self.mean)
-        std = torch.as_tensor(self.std)
-        imgs_normalized = [torch.from_numpy(img[:, cl:-cl, :].transpose(2, 0, 1)) for img in images]
-        imgs_normalized = torch.stack(imgs_normalized)
-        if self.inv_depth:
-            im_depth = imgs_normalized[:, 3]
-            im_depth[im_depth > 0.] = 1 / im_depth[im_depth > 0.]
-        imgs_normalized.sub_(mean[None, :, None, None]).div_(std[None, :, None, None])
-        imgs_normalized = imgs_normalized[:, self.channels]
-
-        imus = []
-        gts = []
-        for i in range(self.seq_size - 1):
-            velo_start_ts = velo_timespamps[i]
-            velo_stop_ts = velo_timespamps[i+1]
-
-            mask = ((dataset.timestamps_imu >= velo_start_ts) & (dataset.timestamps_imu < velo_stop_ts))
-            oxt_indices = np.argwhere(mask).flatten()
-            len_oxt = len(oxt_indices)
-
-            if (len_oxt== 0) or (len_oxt < self.MIN_NUM_OXT_SAMPLES):
-                self.logger.debug("Not enough OXT-samples: Index: {}, DS: {}_{}, len:{}, velo-timestamps: {}-{}".format(index, dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
-                tmp_imu = torch.zeros((self.seq_size - 1, self.MIN_NUM_OXT_SAMPLES, 6))
-                tmp_gt = torch.zeros((self.seq_size - 1, self.MIN_NUM_OXT_SAMPLES, 4, 4))
-                items = [imgs_normalized, tmp_imu, tmp_gt]
-                data = {'images': items[0], 'imus': items[1], 'gts': items[2], 'valid': False, 'meta': [0],
-                        'untrans-images': imgs_org}
-                return data
-            else:
-                oxts_timestamps = dataset.timestamps_imu[oxt_indices]
-                oxts = dataset.oxts[oxt_indices]
-                imu_values = np.array([[oxt[0].ax, oxt[0].ay, oxt[0].az, oxt[0].wx, oxt[0].wy, oxt[0].wz] for oxt in oxts])
-                gt = np.array([oxt[1] for oxt in oxts])
-
-                imus.append(imu_values)
-                gts.append(gt)
+        gts = torch.from_numpy(self.load_ground_truth(dataset, indices)).type(torch.float32)
+        imus = [torch.tensor(imu) for imu in self.load_imus(dataset, velo_timespamps)]
 
         meta_data = {'index': [index], 'date': [dataset.date], 'drive': [dataset.drive], 'velo-index': [indices],
-                     'velo-timestamps': [ts.timestamp() for ts in velo_timespamps],
-                     'oxts-timestamps': [ts.timestamp() for ts in oxts_timestamps]}
+                     'velo-timestamps': [ts.timestamp() for ts in velo_timespamps]}
 
-        imus = [torch.FloatTensor(d) for d in imus]
-        gts = [torch.FloatTensor(d) for d in gts]
-
-        data = {'images': imgs_normalized, 'imus': imus, 'gts': gts, 'valid': True,
-                'meta': meta_data, 'untrans-images': imgs_org}
+        data = {'images': proc_images, 'imus': imus, 'gts': gts, 'meta': meta_data, 'untrans-images': org_images}
 
         end = time.time()
 
