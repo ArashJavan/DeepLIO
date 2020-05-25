@@ -45,9 +45,7 @@ class Tester(Worker):
         Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
         # preapre dataset and dataloaders
-        transform = transforms.Compose([ToTensor(),
-                                        Normalize(mean=self.mean, std=self.std),
-                                        CenterCrop(size=(self.im_height_model, self.im_width_model))])
+        transform = None
 
         self.test_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='test')
         self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,

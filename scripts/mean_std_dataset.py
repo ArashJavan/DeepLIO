@@ -29,6 +29,11 @@ def run_job(args):
     bar_pos = args[0]
     dataset = args[1]
 
+    # get imu values
+    indices = range(len(dataset.oxts_unsync))
+    imus = dataset.get_imu_values(indices)
+
+    # get velodyne images
     length = len(dataset)
     num_channels = len(CHANNEL_NAMES)
 
@@ -39,7 +44,7 @@ def run_job(args):
 
     counter = 0
 
-    for i in tqdm.trange(length, desc=dataset.data_path, position=bar_pos):
+    for i in tqdm.trange(length, desc=dataset.data_path_sync, position=bar_pos):
         im = dataset.get_velo_image(i)
         if cmd_args['inv_depth']:
             im_depth = im[:, :, 3]
@@ -53,7 +58,7 @@ def run_job(args):
             for c in range(num_channels):
                 channel_hist[c].extend(im_channels[c][im_channels[c] != 0])
         counter += 1
-    return (pixel_num, channel_sum, channel_sum_squared, channel_hist)
+    return (pixel_num, channel_sum, channel_sum_squared, channel_hist, imus.mean(axis=0), imus.std(axis=0))
 
 
 def main(args):
@@ -66,7 +71,8 @@ def main(args):
 
     ds_config = config['datasets']
     kitti_config = ds_config['kitti']
-    root_path = kitti_config['root-path']
+    root_path_sync = kitti_config['root-path-sync']
+    root_path_unsync = kitti_config['root-path-unsync']
 
     ds_type = "train"
     num_channels = len(CHANNEL_NAMES)
@@ -88,7 +94,7 @@ def main(args):
         for drive in drives:
             date = str(date).replace('-', '_')
             drive = '{0:04d}'.format(drive)
-            datasets.append(KittiRawData(root_path, date, drive, ds_config))
+            datasets.append(KittiRawData(root_path_sync, root_path_unsync, date, drive, ds_config, oxts_bin=True))
     n_worker = len(datasets)
     counters = list(range(n_worker))
 
@@ -96,12 +102,19 @@ def main(args):
     data = procs.map(run_job, zip(counters, datasets))
     procs.close()
 
+    imus_mean = []
+    imus_std = []
     for d in data:
         pixel_num += d[0]
         channel_sum += d[1]
         channel_sum_squared += d[2]
         for c in range(num_channels):
             channel_hist[c].extend(d[3][c])
+        imus_mean.append(d[4])
+        imus_std.append(d[5])
+
+    imus_mean = np.array(imus_mean)
+    imus_std = np.array(imus_std)
 
     channel_mean = channel_sum / pixel_num
     channel_std = np.sqrt(channel_sum_squared / pixel_num - np.square(channel_mean))
@@ -123,10 +136,14 @@ def main(args):
         fig.savefig("./histogram_mean_and_std.png")
 
     with open("./mean_and_std.txt", 'w') as f:
-        f.write("mean: {}\nstd: {}".format(channel_mean, channel_std))
+        f.write("mean: {}\nstd: {}\nimu-mean: {}, imu-std:{}".
+                format(channel_mean, channel_std, imus_mean.mean(axis=0), imus_std.mean(axis=0)))
 
     print("mean: {}".format(channel_mean))
     print("std: {}".format(channel_std))
+    print("imu-mean: {}".format(imus_mean.mean(axis=0)))
+    print("imu-std: {}".format(imus_std.mean(axis=0)))
+
 
 global cmd_args
 if __name__ == '__main__':

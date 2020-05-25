@@ -1,5 +1,5 @@
 datasets:
-    sequence-size: 2 # must be >= 2
+    sequence-size: 3 # must be >= 2
     kitti:
       root-path-sync: "/media/ajava/Data/Datasets/KITTI/sync"
       root-path-unsync: "/media/ajava/Data/Datasets/KITTI/unsync"
@@ -22,8 +22,10 @@ datasets:
         2011-09-26: [32, 46]
 
       # channesl: x, y, z, range(x,y,z), remissions)
-      mean: [-0.05815, 0.4165, -0.8585, 0.1029, 0.2164]
-      std: [10.0366, 7.4936, 0.8761, 0.0857, 0.1740]
+      mean-image: [-0.05815, 0.4165, -0.8585, 0.1029, 0.2164]
+      std-image: [10.0366, 7.4936, 0.8761, 0.0857, 0.1740]
+      mean-imu: [-0.0635, 0.186, 9.7966, 0., 0.0005, 0.0082]
+      std-imu: [0.8525, 0.9516, 0.3401, 0.0198, 0.02204, 0.1383]
 
       #mean: [-0.0581, 0.4165, -0.8585, 8.2594, 0.2164]
       #std: [10.0366, 7.4936, 0.8761, 9.5056, 0.1740]

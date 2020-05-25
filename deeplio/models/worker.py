@@ -52,9 +52,6 @@ class Worker:
         self.batch_size = self.args.batch_size
         self.num_workers = self.args.workers
 
-        self.mean = np.array(self.curr_dataset_cfg['mean'])
-        self.std = np.array(self.curr_dataset_cfg['std'])
-
         self.device = args.device
 
         # get input images shape and channels

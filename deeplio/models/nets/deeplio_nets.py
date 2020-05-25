@@ -34,15 +34,15 @@ class DeepLIOS3(BaseNet):
             _, feat_out_c, feat_out_h, feat_out_w = x_feat.shape
 
         # odometry network
-        self.fire12 = nn.Sequential(Fire(2*feat_out_c, 64, 64, 64, bn=True, bn_d=bn_d),
-                                    Fire(128, 64, 64, 64, bn=True, bn_d=bn_d),
-                                    SELayer(128, reduction=2),
+        self.fire12 = nn.Sequential(Fire(2*feat_out_c, 64, 256, 256, bn=True, bn_d=bn_d),
+                                    Fire(512, 64, 256, 256, bn=True, bn_d=bn_d),
+                                    SELayer(512, reduction=2),
                                     nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)))
 
-        self.fire34 = nn.Sequential(Fire(128, 80, 64, 64, bn=True, bn_d=bn_d),
-                                    Fire(128, 80, 64, 64, bn=True, bn_d=bn_d),
-                                    #SELayer(512, reduction=2),
-                                    nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)))
+        self.fire34 = nn.Sequential(Fire(512, 80, 384, 384, bn=True, bn_d=bn_d),
+                                    Fire(768, 80, 384, 384, bn=True, bn_d=bn_d),
+                                    #nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)),
+                                    nn.AdaptiveAvgPool2d(1, 1))
 
         # output middle fire conv-layers
         x = torch.rand((1, 2*feat_out_c, feat_out_h, feat_out_w))
@@ -251,21 +251,4 @@ class DeepLIOS01(BaseNet):
         pos = self.fc_pos(out)
         ori = self.fc_ori(out)
         return pos, ori, None, None
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

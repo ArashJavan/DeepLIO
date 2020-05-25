@@ -82,6 +82,13 @@ class KittiRawData:
         image = np.dstack((proj_xyz, proj_range, proj_remission))
         return image
 
+    def get_imu_values(self, idx):
+        oxt = self.oxts_unsync[idx]
+        imu_values = np.array([[oxt[0].ax, oxt[0].ay, oxt[0].az,
+                                oxt[0].wx, oxt[0].wy, oxt[0].wz]
+                               for oxt in oxt], dtype=np.float)
+        return imu_values
+
     def _get_velo_files(self):
         # first try to get binary files
         self.velo_files = sorted(glob.glob(
@@ -219,8 +226,10 @@ class Kitti(data.Dataset):
         ds_config = ds_config_common['kitti']
         self.seq_size = ds_config_common['sequence-size']
         self.inv_depth = ds_config.get('inverse-depth', False)
-        self.mean = ds_config['mean']
-        self.std = ds_config['std']
+        self.mean_img = ds_config['mean-image']
+        self.std_img = ds_config['std-image']
+        self.mean_imu = ds_config['mean-imu']
+        self.std_imu = ds_config['std-imu']
         self.channels = config['channels']
 
         crop_factors = ds_config.get('crop-factors', [0, 0])
@@ -291,7 +300,7 @@ class Kitti(data.Dataset):
         img = dataset.get_velo_image(ds_index)
         self.images[img_index] = img
 
-    def load_imus(self, dataset, velo_timestamps, ):
+    def load_imus(self, dataset, velo_timestamps):
         imus = []
         for i in range(self.seq_size - 1):
             velo_start_ts = velo_timestamps[i]
@@ -317,8 +326,8 @@ class Kitti(data.Dataset):
         imgs_org = torch.stack([torch.from_numpy(im.transpose(2, 0, 1)) for im in self.images])
 
         ct, cl = self.crop_top, self.crop_left
-        mean = torch.as_tensor(self.mean)
-        std = torch.as_tensor(self.std)
+        mean = torch.as_tensor(self.mean_img)
+        std = torch.as_tensor(self.std_img)
         imgs_normalized = [torch.from_numpy(img[:, cl:-cl, :].transpose(2, 0, 1)) for img in self.images]
         imgs_normalized = torch.stack(imgs_normalized)
         if self.inv_depth:
@@ -328,6 +337,9 @@ class Kitti(data.Dataset):
         imgs_normalized = imgs_normalized[:, self.channels]
         return imgs_org, imgs_normalized
 
+    def transform_imus(self, imus):
+        imus_norm = [torch.from_numpy((imu - self.mean_imu) / self.std_imu).type(torch.float32) for imu in imus]
+        return imus_norm
 
     def __len__(self):
         return self.length
@@ -367,11 +379,16 @@ class Kitti(data.Dataset):
         # Get frame timestamps
         velo_timespamps = [dataset.timestamps_velo[idx] for idx in indices]
 
+        # load and transform images
         self.load_images(dataset, indices)
         org_images, proc_images = self.transform_images()
 
+        # load and transform imus
+        imus = self.load_imus(dataset, velo_timespamps)
+        imus = self.transform_imus(imus)
+
+        # load and transform ground truth
         gts = torch.from_numpy(self.load_ground_truth(dataset, indices)).type(torch.float32)
-        imus = [torch.tensor(imu) for imu in self.load_imus(dataset, velo_timespamps)]
 
         meta_data = {'index': [index], 'date': [dataset.date], 'drive': [dataset.drive], 'velo-index': [indices],
                      'velo-timestamps': [ts.timestamp() for ts in velo_timespamps]}
