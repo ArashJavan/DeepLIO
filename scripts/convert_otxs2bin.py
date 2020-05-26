@@ -56,7 +56,7 @@ def convert(args):
         parents = list(p.parents)
         base = str(parents[4].absolute())
         base_sync = os.path.join(base, 'sync')
-        base_unsync = os.path.join(base, 'unsync')
+        base_unsync = os.path.join(base, 'extract')
         drive = parents[2].stem
         date = parents[1].stem.split('_')[-2]
         ds_data.append([base_sync, base_unsync, date, drive])

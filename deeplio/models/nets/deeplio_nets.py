@@ -42,7 +42,7 @@ class DeepLIOS3(BaseNet):
         self.fire34 = nn.Sequential(Fire(512, 80, 384, 384, bn=True, bn_d=bn_d),
                                     Fire(768, 80, 384, 384, bn=True, bn_d=bn_d),
                                     #nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)),
-                                    nn.AdaptiveAvgPool2d(1, 1))
+                                    nn.AdaptiveAvgPool2d((1, 1)))
 
         # output middle fire conv-layers
         x = torch.rand((1, 2*feat_out_c, feat_out_h, feat_out_w))

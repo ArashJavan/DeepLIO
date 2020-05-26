@@ -1,8 +1,8 @@
 datasets:
     sequence-size: 3 # must be >= 2
     kitti:
-      root-path-sync: "/media/ajava/Data/Datasets/KITTI/sync"
-      root-path-unsync: "/media/ajava/Data/Datasets/KITTI/unsync"
+      root-path-sync: "datasets/KITTI/sync"
+      root-path-unsync: "datasets/KITTI/extract"
       image-width: 1800
       image-height: 64
       crop-factors: [0, 4] # top, left
@@ -13,13 +13,12 @@ datasets:
       inverse-depth: true
       train:
         2011-10-03: [27, 42, 34]
-        2011-09-30: [16, 18, 20, 27]
+        2011-09-30: [16, 18, 20, 27, 28]
       test:
         # 2011-09-30: [33, 34]
         2011-10-03: [27]
-        # 2011-10-03: [42]
       validation:
-        2011-09-26: [32, 46]
+        2011-09-26: [23, 39]
 
       # channesl: x, y, z, range(x,y,z), remissions)
       mean-image: [-0.05815, 0.4165, -0.8585, 0.1029, 0.2164]
@@ -36,10 +35,11 @@ arch:
 
   feature-net:
     name: "pointseg"
-    pretrained: true
+    pretrained: false
     model-path: "resources/checkpoint_30_20200504_161441.tar"
     dropout: 0.25
-    classes: ['unknown', 'car', 'pedestrian', 'cyclist']
+    classes: ['unknown', 'object']
+    bypass: true
 
 losses:
   active: 'geoloss'
