@@ -42,7 +42,7 @@ arch:
     bypass: true
 
 losses:
-  active: 'geoloss'
+  active: 'lwsloss'
   hwsloss:
     params:
       learn: true

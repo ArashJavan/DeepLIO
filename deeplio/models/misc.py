@@ -7,17 +7,19 @@ import math
 import numpy as np
 
 class PostProcessSiameseData(object):
-    def __init__(self, seq_size=2, batch_size=1, shuffle=False):
+    def __init__(self, seq_size=2, batch_size=1, shuffle=False, device='cpu'):
         self.seq_size = seq_size
         self.batch_size = batch_size
         self.combinations = []
         self.shuffle = shuffle
+        self.device = device
 
     def process(self, data):
         res_im_0 = []
         res_im_1 = []
         res_imu = []
-        res_gt = []
+        res_gt_local = []
+        res_gt_global = []
         res_untrans_im_0 = []
         res_untrans_im_1 = []
 
@@ -34,8 +36,9 @@ class PostProcessSiameseData(object):
                 random.shuffle(combinations)
             self.combinations.extend(combinations)
 
-            gts = self.process_ground_turth(gts, combinations)
-            res_gt.extend(gts)
+            gts_local = self.process_ground_turth(gts, combinations)
+            res_gt_local.append(gts_local)
+            res_gt_global.append(gts)
 
             for j, combi in enumerate(combinations):
                 idx_0 = combi[0]
@@ -55,13 +58,14 @@ class PostProcessSiameseData(object):
                     imu_tmp.extend(imus[k])
                 res_imu.append(imu_tmp)
 
-        res_im_0 = torch.stack(res_im_0)
-        res_im_1 = torch.stack(res_im_1)
-        res_untrans_im_0 = torch.stack(res_untrans_im_0)
-        res_untrans_im_1 = torch.stack(res_untrans_im_1)
-        res_gt = torch.stack(res_gt)
-        res_imu = [torch.stack(imu) for imu in res_imu]
-        return res_im_0, res_im_1, res_untrans_im_0, res_untrans_im_1, res_gt, res_imu
+        res_gt_global = torch.stack(res_gt_global).to(self.device, non_blocking=True)
+        res_gt_local = torch.stack(res_gt_local).to(self.device, non_blocking=True)
+        res_im_0 = torch.stack(res_im_0).to(self.device, non_blocking=True)
+        res_im_1 = torch.stack(res_im_1).to(self.device, non_blocking=True)
+        res_untrans_im_0 = torch.stack(res_untrans_im_0).to(self.device, non_blocking=True)
+        res_untrans_im_1 = torch.stack(res_untrans_im_1).to(self.device, non_blocking=True)
+        res_imu = [torch.stack(imu).to(self.device, non_blocking=True) for imu in res_imu]
+        return res_im_0, res_im_1, res_untrans_im_0, res_untrans_im_1, res_imu, res_gt_local, res_gt_global
 
     def process_ground_turth(self, gts, combinations):
         T_global = []
@@ -88,7 +92,8 @@ class PostProcessSiameseData(object):
             dv = v_global[combi[1]] - v_global[combi[0]]
             state_local.append(torch.cat([dx, dq, dv]))
 
-        return torch.stack(state_local)
+        gt_local = torch.stack(state_local).to(self.device, non_blocking=True)
+        return gt_local
 
     def __call__(self, args):
         return self.process(args)

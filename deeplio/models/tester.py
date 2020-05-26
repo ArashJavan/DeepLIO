@@ -125,25 +125,15 @@ class Tester(Worker):
                 if not self.is_running:
                     return 0
 
-                    # skip invalid data without ground-truth
-                if not torch.all(data['valid']):
-                    continue
-
-                # prepare data
-                imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, gts, imus = self.post_processor(data)
-
-                # send data to device
-                imgs_0 = imgs_0.to(self.device, non_blocking=True)
-                imgs_1 = imgs_1.to(self.device, non_blocking=True)
-                gts = gts.to(self.device, non_blocking=True)
-                imus = [imu.to(self.device, non_blocking=True) for imu in imus]
+                    # prepare data
+                imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus, gts_local, gts_global = self.post_processor(data)
 
                 # prepare ground truth tranlational and rotational part
-                gt_x = gts[:, :3, 3].contiguous()
-                gt_q = spatial.rotation_matrix_to_quaternion(gts[:, :3, :3].contiguous())
+                gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
+                gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
 
                 # compute model predictions and loss
-                pred_x, pred_q, _, _ = model([imgs_0, imgs_1])
+                pred_x, pred_q, mask0, mask1 = model([imgs_0, imgs_1])
 
                 pred_q_norm = spatial.normalize_quaternion(pred_q)
                 pred_axis_angle = spatial.quaternion_to_angle_axis(pred_q_norm)
@@ -153,7 +143,7 @@ class Tester(Worker):
                 #self.logger.print("pq: {}\ngq: {}".format(pred_axis_angle.detach().cpu().tolist(), gt_axis_angle.detach().cpu().tolist()))
                 #self.logger.print("pq: {}\ngq: {}".format(pred_q.detach().cpu().tolist(), gt_q.detach().cpu().tolist()))
 
-                loss = criterion(pred_x, pred_q, gt_x, gt_q)
+                loss = criterion(pred_x, pred_q, gt_local_x, gt_local_q)
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), len(pred_x))
