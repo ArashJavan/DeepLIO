@@ -66,7 +66,7 @@ class Trainer(Worker):
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size,
                                                      shuffle=True, device=self.device)
 
-        self.model = nets.DeepLIOS3(input_shape=(self.im_height_model, self.im_width_model,
+        self.model = nets.get_model(input_shape=(self.im_height_model, self.im_width_model,
                                                  self.n_channels), cfg=self.cfg['arch'])
         self.model.to(self.device) #should be before creating optimizer
 

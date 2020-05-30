@@ -8,6 +8,7 @@ class BaseNet(nn.Module):
     """
     def __init__(self, input_shape, cfg):
         super(BaseNet, self).__init__()
+        self.cfg = cfg
         self.p = cfg['dropout']
 
         self.input_shape = input_shape

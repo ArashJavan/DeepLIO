@@ -30,11 +30,10 @@ datasets:
       #std: [10.0366, 7.4936, 0.8761, 9.5056, 0.1740]
 
 arch:
-  name: "deeplio3"
-  dropout: 0.5
-
+  name: "deeplioS0" # [deeplioS0, deeplioS1, DeepLIO0]
+  dropout: 0.25
   feature-net:
-    name: "pointseg"
+    name: "simple0" # [simple0, simple1]
     pretrained: false
     model-path: "resources/checkpoint_30_20200504_161441.tar"
     dropout: 0.25
