@@ -66,18 +66,18 @@ class Trainer(Worker):
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size,
                                                      shuffle=True, device=self.device)
 
-        self.model = nets.DeepLIOS0(input_shape=(self.im_height_model, self.im_width_model,
+        self.model = nets.DeepLIOS3(input_shape=(self.im_height_model, self.im_width_model,
                                                  self.n_channels), cfg=self.cfg['arch'])
         self.model.to(self.device) #should be before creating optimizer
 
         self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
-        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.5)
+        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=8, gamma=0.5)
         self.criterion = get_loss_function(self.cfg, args.device)
 
         # debugging and visualizing
         self.logger.print("DeepLIO Training Configurations:")
-        self.logger.print("lr: {}, batch-size:{}, workers: {}, epochs:{}".
-                          format(args.lr, self.batch_size, self.num_workers, self.epochs))
+        self.logger.print("lr: {}, wd: {}, batch-size:{}, workers: {}, epochs:{}".
+                          format(args.lr, args.weight_decay, self.batch_size, self.num_workers, self.epochs))
 
         # optionally resume from a checkpoint
         if args.resume or args.evaluate:
@@ -207,7 +207,7 @@ class Trainer(Worker):
                 if idx % (5 * self.args.print_freq) == 0:
                     # print some prediction results
                     x = pred_x[0:2].detach().cpu().flatten()
-                    q = pred_q[0:2].detach().cpu().flatten()
+                    q = spatial.normalize_quaternion(pred_q[0:2].detach().cpu()).flatten()
                     x_gt = gt_local_x[0:2].detach().cpu().flatten()
                     q_gt = gt_local_q[0:2].detach().cpu().flatten()
 

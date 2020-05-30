@@ -196,19 +196,6 @@ class KittiRawData:
         oxts = utils.load_oxts_packets_and_poses(self.oxts_files_sync[indices])
         return oxts
 
-    def calc_gt_from_oxts(self, oxts):
-        transformations = [oxt.T_w_imu for oxt in oxts]
-
-        T_w0 = transformations[0]
-        R_w0 = T_w0[:3, :3]
-        t_w0 = T_w0[:3, 3]
-        T_w0_inv = np.identity(4)
-        T_w0_inv[:3, :3] = R_w0.T
-        T_w0_inv[:3, 3] = -np.matmul(R_w0.T, t_w0)
-
-        gt_s = [np.matmul(T_w0_inv, T_0i) for T_0i in transformations]
-        return gt_s
-
 
 class Kitti(data.Dataset):
     # In unsynced KITTI raw dataset are some timestamp holes - i.g. 2011_10_03_27
@@ -341,15 +328,7 @@ class Kitti(data.Dataset):
         imus_norm = [torch.from_numpy((imu - self.mean_imu) / self.std_imu).type(torch.float32) for imu in imus]
         return imus_norm
 
-    def __len__(self):
-        return self.length
-
-    def __getitem__(self, index):
-        if torch.is_tensor(index):
-            index = index.tolist()
-
-        start = time.time()
-
+    def get_dataset_and_index(self, index):
         idx = -1
         num_drive = -1
         for i, bin in enumerate(self.bins):
@@ -375,6 +354,17 @@ class Kitti(data.Dataset):
         else:
             self.logger.error("Wrong index ({}) in {}_{}".format(idx, dataset.date, dataset.drive))
             raise Exception("Wrong index ({}) in {}_{}".format(idx, dataset.date, dataset.drive))
+        return dataset, indices
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, index):
+        if torch.is_tensor(index):
+            index = index.tolist()
+
+        start = time.time()
+        dataset, indices = self.get_dataset_and_index(index)
 
         # Get frame timestamps
         velo_timespamps = [dataset.timestamps_velo[idx] for idx in indices]

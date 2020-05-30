@@ -42,16 +42,16 @@ class LWSLoss(nn.Module):
 class HWSLoss(nn.Module):
     """Homoscedastic weighted Loss
     """
-    def __init__(self, sx=0., sq=-2.5, learn=True, device="cpu"):
+    def __init__(self, sx=0., sq=-2.5, learn_hyper_params=True, device="cpu"):
         """
         :param sx:
         :param sq:
-        :param learn: learning the smoothnes terms during training
+        :param learn_hyper_params: learning the smoothnes terms during training
         """
         super(HWSLoss, self).__init__()
 
-        self.sx = torch.tensor(sx, device=device, requires_grad=learn)
-        self.sq = torch.tensor(sq, device=device, requires_grad=learn)
+        self.sx = torch.tensor(sx, device=device, requires_grad=learn_hyper_params)
+        self.sq = torch.tensor(sq, device=device, requires_grad=learn_hyper_params)
         self.loss_fn = nn.MSELoss()
 
     def forward(self, x_pred, q_pred, x_gt, q_gt):

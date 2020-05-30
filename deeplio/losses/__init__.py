@@ -11,7 +11,7 @@ def get_loss_function(cfg, device):
         learn_smooth = params.get('learn', False)
         sx = params.get('sx', 0.)
         sq = params.get('sq', -2.5)
-        return HWSLoss(sx=sx, sq=sq, learn=learn_smooth, device=device)
+        return HWSLoss(sx=sx, sq=sq, learn_hyper_params=learn_smooth, device=device)
     elif loss_name == 'lwsloss':
         beta = params.get('beta', 1125.)
         return LWSLoss(beta=beta)

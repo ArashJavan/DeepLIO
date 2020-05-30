@@ -11,7 +11,7 @@ matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
-dname = os.path.abspath('')
+dname = os.path.dirname(os.path.realpath(__file__))
 module_dir = os.path.abspath("{}/../deeplio".format(dname))
 content_dir = os.path.abspath("{}/..".format(dname))
 sys.path.append(dname)
@@ -34,17 +34,10 @@ def main(args):
     with open(args['config']) as f:
         cfg = yaml.safe_load(f)
 
-    # extracting infos from config file
-    ds_cfg = cfg['datasets']
-    kitti_config = ds_cfg['kitti']
-    seq_size = ds_cfg['sequence-size']
-    root_path = kitti_config['root-path']
-
     ds_type = "train"
 
-    batch_size = 1
+    batch_size = 3
     num_workers = 8
-
 
     OUTPUT_PATH = "{}/outputs/images".format(content_dir)
 
@@ -58,10 +51,10 @@ def main(args):
     # TODO: Remove dependecy of dataset to global logger, so it can have its own
     flog_name = "{}/{}_{}.log".format(OUTPUT_PATH, "Dataset-Visualization",
                                       datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
-    get_app_logger(filename=flog_name, level=logging.INFO)
+    logger = get_app_logger(filename=flog_name, level=logging.INFO)
 
     # create dataset andataloader
-    kitti_dataset = Kitti(config=cfg, transform=None, ds_type='train')
+    kitti_dataset = Kitti(config=cfg, transform=None, ds_type=ds_type)
     dataloader = torch.utils.data.DataLoader(kitti_dataset, batch_size=batch_size,
                                              num_workers=num_workers,
                                              shuffle=False,
@@ -72,19 +65,13 @@ def main(args):
 
     # Iterate through datset and save images
     for idx, data in enumerate(dataloader):
-        # skip invalid data without ground-truth
-        if not torch.all(data['valid']):
-            pbar.update(1)
-            # print("[{}] Invalid!".format(idx))
-            continue
-
-        metas = data['metas'][0]
-        index = metas['index'][0]
-        date = metas['date'][0]
-        drive = metas['drive'][0]
-
         ims = data['images'].detach().cpu()
         for b in range(len(ims)):
+            metas = data['metas'][b]
+            index = metas['index'][0]
+            date = metas['date'][0]
+            drive = metas['drive'][0]
+
             ims_batch = ims[b]
             ims_depth = [F.pad(im, (0, 0, 10, 0)) for im in ims_batch[:, 0, :, :]]
             ims_depth = torch.cat(ims_depth, dim=0)
@@ -92,7 +79,7 @@ def main(args):
             ims_remission = [F.pad(im, (0, 0, 10, 0)) for im in ims_batch[:, 1, :, :]]
             ims_remission = torch.cat(ims_remission, dim=0)
 
-            fig, ax = plt.subplots(3, 1)
+            fig, ax = plt.subplots(3, 1, figsize=(15, 7))
             ax[0].set_title("Depth, mean:{:.4f}, std:{:.4f}".format(ims_depth.mean(), ims_depth.std()), fontsize=5)
             ax[0].axis('off')
             ax[0].imshow(ims_depth)
@@ -106,8 +93,8 @@ def main(args):
             ax[2].hist(ims_remission.flatten(), bins=50, alpha=0.5, label="remission", density=True)
             ax[2].legend()
 
-            fname = "{}/{}_{}_{}.png".format(OUTPUT_PATH, index, date, drive)
-            # print("[{}] Saving {}".format(idx, fname))
+            fname = "{}/{}_{}_{}_{}.png".format(OUTPUT_PATH, idx, index, date, drive)
+            #logger.info("saving {}.".format(fname))
             fig.savefig(fname, dpi=300)
             plt.close(fig)
 
@@ -116,11 +103,9 @@ def main(args):
             break
 
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DeepLIO Training')
     parser.add_argument('-c', '--config', default="../config.yaml", help='configuration file')
-    parser.add_argument('-p', '--path', default="../images", help='Images Path')
 
     args = vars(parser.parse_args())
     main(args)

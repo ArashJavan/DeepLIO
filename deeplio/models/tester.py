@@ -54,8 +54,10 @@ class Tester(Worker):
                                                            worker_init_fn = worker_init_fn,
                                                            collate_fn = ds.deeplio_collate)
 
-        self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=False)
-        self.model = nets.DeepLIOS0(input_shape=(self.im_height_model, self.im_width_model,
+        self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size,
+                                                     shuffle=False, device=self.device)
+
+        self.model = nets.DeepLIOS3(input_shape=(self.im_height_model, self.im_width_model,
                                                  self.n_channels), cfg=self.cfg['arch'])
         self.model.to(self.device)
 
@@ -137,8 +139,7 @@ class Tester(Worker):
 
                 pred_q_norm = spatial.normalize_quaternion(pred_q)
                 pred_axis_angle = spatial.quaternion_to_angle_axis(pred_q_norm)
-                gt_axis_angle = spatial.quaternion_to_angle_axis(gt_q)
-
+                gt_axis_angle = spatial.quaternion_to_angle_axis(gt_local_q)
                 #self.logger.print("px: {}\ngx: {}".format(pred_x.detach().cpu().numpy(), gt_x.detach().cpu().numpy()))
                 #self.logger.print("pq: {}\ngq: {}".format(pred_axis_angle.detach().cpu().tolist(), gt_axis_angle.detach().cpu().tolist()))
                 #self.logger.print("pq: {}\ngq: {}".format(pred_q.detach().cpu().tolist(), gt_q.detach().cpu().tolist()))
@@ -156,30 +157,44 @@ class Tester(Worker):
                 meta = data['metas'][0]
                 date, drive = meta['date'][0], meta['drive'][0]
                 idx = meta['index'][0]
-                velo_idx = meta['velo-index'][0]
-                oxts_ts = meta['oxts-timestamps']
                 velo_ts = meta['velo-timestamps']
 
-                gt_global = data['gts'][0][0].detach().cpu().numpy()
+                gt_global = gts_global[0].cpu().numpy()
                 seq_name = "{}_{}".format(date, drive)
                 if seq_name not in seq_names:
                     if last_seq is not None:
                         last_seq.write_to_file()
 
                     curr_seq = OdomSeqRes(date, drive, output_dir=self.out_dir)
-                    curr_seq.add_local_prediction(velo_ts[0], 0., gt_global[0], gt_global[0])
+                    T_glob = np.identity(4)
+                    T_glob[:3, 3] = gt_global[0, 0:3]  # t
+                    T_glob[:3, :3] = gt_global[0, 3:12].reshape(3, 3) # R
+                    curr_seq.add_local_prediction(velo_ts[0], 0., T_glob, T_glob)
 
                     # add the file name and file-pointer to the list
                     seq_names.append(seq_name)
 
-                gt_local = gt_x.detach().cpu().squeeze()
-                gt_q = gt_q.detach().cpu().squeeze()
+                # global ground truth pose
+                T_glob = np.identity(4)
+                T_glob[:3, 3] = gt_global[1, 0:3]  # t
+                T_glob[:3, :3] = gt_global[1, 3:12].reshape(3, 3) # R
+
+                gt_x = gt_local_x.detach().cpu().squeeze()
+                gt_q = gt_local_q.detach().cpu().squeeze()
+                pred_x = pred_x.detach().cpu().squeeze()
+                pred_q = pred_q.detach().cpu().squeeze()
 
                 T_local = np.identity(4)
-                T_local[:3, 3] = pred_x.detach().cpu().squeeze().numpy() #  gt_local.numpy()
-                T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q.detach().cpu().squeeze()).numpy() #  spatial.quaternion_to_rotation_matrix(gt_q).numpy()
-                # T_local = gts.detach().cpu().squeeze().numpy()
-                curr_seq.add_local_prediction(velo_ts[1], losses.avg, T_local, gt_global[-1])
+
+                # tranlation
+                T_local[:3, 3] = pred_x.numpy() #  gt_x.numpy()
+                #T_local[:3, 3] = gt_x.numpy()
+
+                # rotation
+                #T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q).numpy()
+                T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
+
+                curr_seq.add_local_prediction(velo_ts[1], losses.avg, T_local, T_glob)
 
                 last_seq = curr_seq
                 if idx % self.args.print_freq == 0:
@@ -222,6 +237,7 @@ class OdomSeqRes:
             T = np.matmul(T_0i, T_i)
             T_glob_pred.append(T)
             T_0i = np.copy(T)
+
         self.T_global = np.array(self.T_global)
         self.T_local_pred = np.array(self.T_local_pred)
         T_glob_pred = np.array(T_glob_pred)
@@ -239,11 +255,16 @@ class OdomSeqRes:
         np.savetxt(fname, res, fmt='%.5f', delimiter=',')
 
         fname = "{}/{}_{}.png".format(self.out_dir, self.date, self.drive)
-        plt.plot(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5, label="GT-global")
-        plt.scatter(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5, s=0.5)
-        plt.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, label="GT-local")
-        plt.scatter(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, s=0.5)
+        plt.figure()
 
+        plt.plot(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5, linewidth=1, label="GT")
+        plt.scatter(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.7, s=0.5)
+
+        plt.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, linewidth=1, label="DeepLIO")
+        plt.scatter(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.7, s=0.5)
+
+        plt.xlabel('x [m]')
+        plt.ylabel('y [m]')
         plt.grid()
         plt.legend()
         plt.savefig(fname, figsize=(50, 50), dpi=600)
