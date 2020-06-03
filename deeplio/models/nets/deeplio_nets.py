@@ -152,15 +152,15 @@ class FeatureNetSimple1(BaseNet):
         self.bn4 = nn.BatchNorm2d(64)
         self.pool4 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
 
-        self.conv5 = nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn5 = nn.BatchNorm2d(64)
+        self.conv5 = nn.Conv2d(64, out_channels=128, kernel_size=3, stride=(1, 1), padding=1)
+        self.bn5 = nn.BatchNorm2d(128)
 
-        self.conv6 = nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn6 = nn.BatchNorm2d(64)
+        self.conv6 = nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1)
+        self.bn6 = nn.BatchNorm2d(128)
         self.pool6 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True)
 
-        self.conv7 = nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn7 = nn.BatchNorm2d(64)
+        self.conv7 = nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1)
+        self.bn7 = nn.BatchNorm2d(128)
         self.pool7 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True)
 
     def forward(self, x):
@@ -227,20 +227,22 @@ class DeepLIOS0N(BaseNet):
             _, c, h, w = x.shape
             self.fc_in_shape = (c, h, w)
 
-        self.fc1 = nn.Linear(1*c*h*w, 512)
+        self.fc1 = nn.Linear(2*c*h*w, 512)
         self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, 128)
 
         if self.p > 0:
             self.dropout = nn.Dropout2d(p=self.p)
 
-        self.fc_pos = nn.Linear(256, 3)
-        self.fc_ori = nn.Linear(256, 4)
+        self.fc_pos = nn.Linear(128, 3)
+        self.fc_ori = nn.Linear(128, 4)
 
     def forward(self, x):
         out = self.forward_feat_net(x)
 
         out = F.relu(self.fc1(out))
         out = F.relu(self.fc2(out))
+        out = F.relu(self.fc3(out))
 
         if self.p > 0:
             out = self.dropout(out)
@@ -269,7 +271,7 @@ class DeepLIOS0(DeepLIOS0N):
 
         out_0 = self.feature_net(imgs_0)
         out_1 = self.feature_net(imgs_1)
-        out = torch.sub(out_1, out_0) # torch.cat((out_1, out_0), dim=1)
+        out = torch.cat((out_1, out_0), dim=1) #  torch.sub(out_1, out_0) #
         out = out.view(-1, num_flat_features(out))
         return out
 
