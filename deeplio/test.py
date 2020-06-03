@@ -39,7 +39,7 @@ if __name__ == '__main__':
     parser.add_argument('--plot', default=False, help='plot the results', action='store_true', dest='plot')
     parser.add_argument('--device', default='cpu', type=str, metavar='DEVICE',
                         help='Device to use [cpu, cuda].')
-
+    parser.add_argument('--param', default='xq', type=str, help='Which parameter to predict (default: xq) [x, xq]', dest="param")
 
     signal.signal(signal.SIGINT, signal_handler)
 

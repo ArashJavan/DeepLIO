@@ -56,8 +56,7 @@ class Tester(Worker):
 
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size,
                                                      shuffle=False, device=self.device)
-
-        self.model = nets.DeepLIOS3(input_shape=(self.im_height_model, self.im_width_model,
+        self.model = nets.get_model(input_shape=(self.im_height_model, self.im_width_model,
                                                  self.n_channels), cfg=self.cfg['arch'])
         self.model.to(self.device)
 
@@ -144,7 +143,11 @@ class Tester(Worker):
                 #self.logger.print("pq: {}\ngq: {}".format(pred_axis_angle.detach().cpu().tolist(), gt_axis_angle.detach().cpu().tolist()))
                 #self.logger.print("pq: {}\ngq: {}".format(pred_q.detach().cpu().tolist(), gt_q.detach().cpu().tolist()))
 
-                loss = criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+                # rotation
+                if self.args.param == 'xq':
+                    loss = criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+                else:
+                    loss = criterion(pred_x, gt_local_q, gt_local_x, gt_local_q)
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), len(pred_x))
@@ -173,6 +176,7 @@ class Tester(Worker):
 
                     # add the file name and file-pointer to the list
                     seq_names.append(seq_name)
+                    losses.reset()
 
                 # global ground truth pose
                 T_glob = np.identity(4)
@@ -191,8 +195,10 @@ class Tester(Worker):
                 #T_local[:3, 3] = gt_x.numpy()
 
                 # rotation
-                #T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q).numpy()
-                T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
+                if self.args.param == 'xq':
+                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q).numpy()
+                else:
+                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
 
                 curr_seq.add_local_prediction(velo_ts[1], losses.avg, T_local, T_glob)
 
@@ -246,7 +252,6 @@ class OdomSeqRes:
         self.loss = np.asarray(self.loss).reshape(-1, 1)
 
         res = np.hstack((self.timestamps,
-                         self.T_local_pred.reshape(len(self.T_local_pred), -1),
                          T_glob_pred.reshape(len(T_glob_pred), -1),
                          self.T_global.reshape(len(self.T_global), -1),
                          self.loss))
