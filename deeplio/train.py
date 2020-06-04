@@ -36,6 +36,8 @@ if __name__ == '__main__':
                         help='manual epoch number (useful on restarts)')
     parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float,
                         metavar='LR', help='initial learning rate', dest='lr')
+    parser.add_argument('--lr-decay', '--learning-rate-decay', default=30, type=int,
+                        metavar='LR-DECAY-STEP', help='learning rate decay step', dest='lr_decay')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                         help='momentum')
     parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,

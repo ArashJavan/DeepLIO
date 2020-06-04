@@ -71,13 +71,13 @@ class Trainer(Worker):
         self.model.to(self.device) #should be before creating optimizer
 
         self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
-        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=8, gamma=0.5)
+        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.args.lr_decay, gamma=0.5)
         self.criterion = get_loss_function(self.cfg, args.device)
 
         # debugging and visualizing
         self.logger.print("DeepLIO Training Configurations:")
-        self.logger.print("lr: {}, wd: {}, batch-size:{}, workers: {}, epochs:{}".
-                          format(args.lr, args.weight_decay, self.batch_size, self.num_workers, self.epochs))
+        self.logger.print("args: {}".
+                          format(self.args))
 
         # optionally resume from a checkpoint
         if args.resume or args.evaluate:
@@ -301,7 +301,7 @@ class Trainer(Worker):
 
     def save_checkpoint(self, state, is_best):
         epoch = state['epoch']
-        filename = '{}/cpkt_{}_{}_{}.tar'.format(self.checkpoint_dir, self.model.name, epoch, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+        filename = '{}/cpkt_{}.tar'.format(self.checkpoint_dir, self.model.name)
         torch.save(state, filename)
         if is_best:
             filename_best = '{}/cpkt_{}_best.tar'.format(self.checkpoint_dir, self.model.name)
