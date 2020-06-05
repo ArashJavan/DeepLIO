@@ -9,13 +9,11 @@ from .modules import Fire, SELayer
 from .pointseg_net import PointSegNet
 
 
-class DeepLIO0(BaseNet):
-    """
-    DeepLIO with Simple Siamese SqueezeNet
-    """
+class DeepLIONBase(BaseNet):
+    """Base class for all DepplioN Networks"""
     def __init__(self, input_shape, cfg, bn_d=0.1):
-        super(DeepLIO0, self).__init__(input_shape, cfg)
-
+        super(DeepLIONBase, self).__init__(input_shape, cfg)
+        self.bn_d = bn_d
         # Siamese sqeeuze feature extraction networks
         feat_cfg = cfg['feature-net']
         self.feat_net = PointSegNet(input_shape, feat_cfg)
@@ -26,6 +24,7 @@ class DeepLIO0(BaseNet):
                 checkpoint = torch.load(ckp_path)
                 self.feat_net.load_state_dict(checkpoint['state_dict'])
 
+    def get_feature_channel_size(self):
         # Output size detection of feature extraction layer
         self.feat_net.eval()
         with torch.no_grad():
@@ -34,13 +33,13 @@ class DeepLIO0(BaseNet):
             _, feat_out_c, feat_out_h, feat_out_w = x_feat.shape
 
         # odometry network
-        self.fire12 = nn.Sequential(Fire(2*feat_out_c, 64, 256, 256, bn=True, bn_d=bn_d),
-                                    Fire(512, 64, 256, 256, bn=True, bn_d=bn_d),
+        self.fire12 = nn.Sequential(Fire(2*feat_out_c, 64, 256, 256, bn=True, bn_d=self.bn_d),
+                                    Fire(512, 64, 256, 256, bn=True, bn_d=self.bn_d),
                                     SELayer(512, reduction=2),
                                     nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)))
 
-        self.fire34 = nn.Sequential(Fire(512, 80, 384, 384, bn=True, bn_d=bn_d),
-                                    Fire(768, 80, 384, 384, bn=True, bn_d=bn_d),
+        self.fire34 = nn.Sequential(Fire(512, 80, 384, 384, bn=True, bn_d=self.bn_d),
+                                    Fire(768, 80, 384, 384, bn=True, bn_d=self.bn_d),
                                     #nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)),
                                     nn.AdaptiveAvgPool2d((1, 1)))
 
@@ -51,8 +50,18 @@ class DeepLIO0(BaseNet):
             x = self.fire12(x)
             x = self.fire34(x)
             x = x.view(-1, num_flat_features(x))
-        _, mid_c = x.shape
+        _, c = x.shape
+        return c
 
+
+class DeepLIO0(DeepLIONBase):
+    """
+    DeepLIO with Simple Siamese SqueezeNet
+    """
+    def __init__(self, input_shape, cfg, bn_d=0.1):
+        super(DeepLIO0, self).__init__(input_shape, cfg)
+
+        mid_c = self.get_feature_channel_size()
         self.fc1 = nn.Linear(mid_c, 512)
 
         if self.p > 0:
@@ -73,6 +82,64 @@ class DeepLIO0(BaseNet):
         x = self.fire34(x)
 
         x = x.view(-1, num_flat_features(x))
+        x = self.fc1(x)
+
+        if self.p > 0:
+            x = self.dropout(x)
+
+        x_pos = self.fc_pos(x)
+        x_ori = self.fc_ori(x)
+
+        return x_pos, x_ori, x0_mask, x1_mask
+
+
+class DeepLIO1(DeepLIONBase):
+    """
+    DeepLIO with Simple Siamese SqueezeNet
+    """
+    def __init__(self, input_shape, cfg, bn_d=0.1):
+        super(DeepLIO1, self).__init__(input_shape, cfg)
+
+        self.rnn_hidden_size = 6
+        self.rnn_num_layers = 1
+        self.bidrectional = False
+
+        self.rnn_imu = nn.LSTM(input_size=6, hidden_size=self.rnn_hidden_size, num_layers=self.rnn_num_layers,
+                               batch_first=True, bidirectional=self.bidrectional)
+
+        mid_c = self.get_feature_channel_size()
+        self.fc1 = nn.Linear(mid_c + self.rnn_hidden_size, 512)
+
+        if self.p > 0:
+            self.dropout = nn.Dropout2d(p=self.p)
+
+        self.fc_pos = nn.Linear(512, 3)
+        self.fc_ori = nn.Linear(512, 4)
+
+    def forward(self, x):
+        ims0 = x[0]
+        ims1 = x[1]
+        imus = x[2]
+
+        n_batches, n_seq = len(imus), len(imus[0])
+        x_imu = []
+        for b in range(n_batches):
+            for s in range(n_seq):
+                imu = imus[b][s]
+                out, hidden = self.rnn_imu(imu.unsqueeze(0))
+                x_imu.append(out[0, -1, :])
+
+        x_imu = torch.stack(x_imu)
+
+        x0_mask, x0_feat = self.feat_net(ims0)
+        x1_mask, x1_feat = self.feat_net(ims1)
+
+        x_feat = torch.cat((x0_feat, x1_feat), dim=1)
+        x_feat = self.fire12(x_feat)
+        x_feat = self.fire34(x_feat)
+
+        x_feat = x_feat.view(-1, num_flat_features(x_feat))
+        x = torch.cat((x_feat, x_imu), dim=1)
         x = self.fc1(x)
 
         if self.p > 0:

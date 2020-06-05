@@ -1,4 +1,4 @@
-from .deeplio_nets import DeepLIOS0, DeepLIO0, DeepLIOS1
+from .deeplio_nets import DeepLIOS0, DeepLIOS1, DeepLIO0, DeepLIO1
 
 
 def get_model(input_shape, cfg):
@@ -10,5 +10,7 @@ def get_model(input_shape, cfg):
         return DeepLIOS1(input_shape, cfg)
     elif net_name == 'deeplio0':
         return DeepLIO0(input_shape, cfg)
+    elif net_name == 'deeplio1':
+        return DeepLIO1(input_shape, cfg)
     else:
         raise ValueError("Netwrok {} is not supported!".format(net_name))

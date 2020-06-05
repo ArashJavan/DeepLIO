@@ -104,9 +104,9 @@ class Trainer(Worker):
         self.logger.print(self.val_dataset)
 
         # log the network structure and number of params
-        imgs = torch.randn((2, 3, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
-        self.model.eval()
-        self.logger.print(summary(self.model, imgs))
+        #imgs = torch.randn((2, 3, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
+        #self.model.eval()
+        #self.logger.print(summary(self.model, imgs))
         #self.tensor_writer.add_graph(self.model, imgs)
 
     def run(self):
@@ -186,7 +186,7 @@ class Trainer(Worker):
             gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
 
             # compute model predictions and loss
-            pred_x, pred_q, mask0, mask1 = model([imgs_0, imgs_1])
+            pred_x, pred_q, mask0, mask1 = model([imgs_0, imgs_1, imus])
             loss = criterion(pred_x, pred_q, gt_local_x, gt_local_q)
 
             # measure accuracy and record loss

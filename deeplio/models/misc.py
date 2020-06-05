@@ -40,6 +40,7 @@ class PostProcessSiameseData(object):
             res_gt_local.append(gts_local)
             res_gt_global.append(gts)
 
+            imu_seq = []
             for j, combi in enumerate(combinations):
                 idx_0 = combi[0]
                 idx_1 = combi[1]
@@ -56,7 +57,8 @@ class PostProcessSiameseData(object):
                 imu_tmp = []
                 for k in range(min_idx, max_idx):
                     imu_tmp.extend(imus[k])
-                res_imu.append(imu_tmp)
+                imu_seq.append(torch.stack(imu_tmp).to(self.device))
+            res_imu.append(imu_seq)
 
         res_gt_global = torch.stack(res_gt_global).to(self.device, non_blocking=True)
         res_gt_local = torch.stack(res_gt_local).to(self.device, non_blocking=True)
@@ -64,7 +66,7 @@ class PostProcessSiameseData(object):
         res_im_1 = torch.stack(res_im_1).to(self.device, non_blocking=True)
         res_untrans_im_0 = torch.stack(res_untrans_im_0).to(self.device, non_blocking=True)
         res_untrans_im_1 = torch.stack(res_untrans_im_1).to(self.device, non_blocking=True)
-        res_imu = [torch.stack(imu).to(self.device, non_blocking=True) for imu in res_imu]
+        #res_imu = [torch.stack(imu).to(self.device, non_blocking=True) for imu_seq in res_imu for imu in imu_seq]
         return res_im_0, res_im_1, res_untrans_im_0, res_untrans_im_1, res_imu, res_gt_local, res_gt_global
 
     def process_ground_turth(self, gts, combinations):

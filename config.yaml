@@ -12,8 +12,8 @@ datasets:
       min-depth: 1.
       inverse-depth: true
       train:
-        2011-10-03: [27, 42, 34]
-        2011-09-30: [16, 18, 20, 27, 28]
+        #2011-10-03: [27, 42, 34]
+        2011-09-30: [16] # [16, 18, 20, 27, 28]
       test:
         # 2011-09-30: [33, 34]
         2011-10-03: [27]
@@ -30,7 +30,7 @@ datasets:
       #std: [10.0366, 7.4936, 0.8761, 9.5056, 0.1740]
 
 arch:
-  name: "deeplioS0" # [deeplioS0, deeplioS1, DeepLIO0]
+  name: "deeplio1" # [deeplioS0, deeplioS1, DeepLIO0, DeepLIO1]
   dropout: 0.25
   feature-net:
     name: "simple0" # [simple0, simple1]
