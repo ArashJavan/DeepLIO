@@ -21,19 +21,16 @@ from deeplio.common import spatial, utils
 from deeplio.models import nets
 from deeplio.models.misc import PostProcessSiameseData
 from deeplio.models.worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
-from .transforms import ToTensor, Normalize, CenterCrop
+from deeplio.losses import get_loss_function
 
 
 class Tester(Worker):
     ACTION = "test"
 
-    def __init__(self, parser):
-        super(Tester, self).__init__(parser)
-        args = self.args
+    def __init__(self, args, cfg):
+        super(Tester, self).__init__(args, cfg)
 
-        if self.seq_size != 2:
-            self.logger.info("sequence size in the testing mode should be set to two.")
-            raise ValueError("sequence size in the testing mode should be set to two.")
+        args = self.args
 
         if self.batch_size != 1:
             self.logger.info("batch size in the testing mode should be set to one.")
@@ -48,6 +45,11 @@ class Tester(Worker):
         transform = None
 
         self.test_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='test')
+
+        if self.seq_size != 2:
+            self.logger.info("setting sequence size (s=2)")
+            self.test_dataset.seq_size = 2
+
         self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
                                                            num_workers=self.num_workers,
                                                            shuffle=False,
@@ -56,35 +58,16 @@ class Tester(Worker):
 
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size,
                                                      shuffle=False, device=self.device)
-        self.model = nets.get_model(input_shape=(self.im_height_model, self.im_width_model,
-                                                 self.n_channels), cfg=self.cfg['arch'])
-        self.model.to(self.device)
-
-        self.criterion = LWSLoss()
+        self.model = nets.get_model(input_shape=(self.n_channels, self.im_height_model, self.im_width_model),
+                                    cfg=self.cfg, device=self.device)
+        self.criterion = get_loss_function(self.cfg, args.device)
 
         self.tensor_writer = tensorboard.SummaryWriter(log_dir=self.runs_dir)
 
         # debugging and visualizing
-        self.logger.print("DeepLIO Testing Configurations:")
-        self.logger.print("batch-size:{}, workers: {}".
-                          format(self.batch_size, self.num_workers))
-
-        # load trained model checkpoint
-        if args.model:
-            if not os.path.isfile(args.model):
-                self.logger.error("no model checkpoint found at '{}'".format(args.model))
-                parser.print_help()
-                parser.exit(1)
-            ckp_path = args.model
-
-            self.logger.info("loading checkpoint '{}".format(ckp_path))
-            checkpoint = torch.load(ckp_path, map_location=self.device)
-            self.model.load_state_dict(checkpoint['state_dict'])
-            self.logger.info("loaded checkpoint '{}' (epoch {})".format(ckp_path, checkpoint['epoch']))
-        else:
-            self.logger.error("no model checkpoint provided.")
-            parser.print_help()
-            parser.exit(1)
+        self.logger.print("System Training Configurations:")
+        self.logger.print("args: {}".
+                          format(self.args))
 
         self.logger.print(yaml.dump(self.cfg))
         self.logger.print(self.test_dataset)
@@ -134,20 +117,8 @@ class Tester(Worker):
                 gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
 
                 # compute model predictions and loss
-                pred_x, pred_q, mask0, mask1 = model([imgs_0, imgs_1])
-
-                pred_q_norm = spatial.normalize_quaternion(pred_q)
-                pred_axis_angle = spatial.quaternion_to_angle_axis(pred_q_norm)
-                gt_axis_angle = spatial.quaternion_to_angle_axis(gt_local_q)
-                #self.logger.print("px: {}\ngx: {}".format(pred_x.detach().cpu().numpy(), gt_x.detach().cpu().numpy()))
-                #self.logger.print("pq: {}\ngq: {}".format(pred_axis_angle.detach().cpu().tolist(), gt_axis_angle.detach().cpu().tolist()))
-                #self.logger.print("pq: {}\ngq: {}".format(pred_q.detach().cpu().tolist(), gt_q.detach().cpu().tolist()))
-
-                # rotation
-                if self.args.param == 'xq':
-                    loss = criterion(pred_x, pred_q, gt_local_x, gt_local_q)
-                else:
-                    loss = criterion(pred_x, gt_local_q, gt_local_x, gt_local_q)
+                pred_x, pred_q, loss = self.eval_model_and_loss(imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
+                                                                gts_local, gt_local_x, gt_local_q, gts_global)
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), len(pred_x))
@@ -216,6 +187,53 @@ class Tester(Worker):
 
         if curr_seq is not None:
             curr_seq.write_to_file()
+
+    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
+                            gts_local, gt_local_x, gt_local_q, gts_global):
+        pred_x = None
+        pred_q = None
+        loss = None
+        return pred_x, pred_q, loss
+
+
+class TesterDeepIO(Tester):
+    ACTION = "test_deepio"
+
+    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
+                            gts_local, gt_local_x, gt_local_q, gts_global):
+        # compute model predictions and loss
+        pred_x, pred_q = self.model(imus)
+
+        # rotation
+        if self.args.param == 'xq':
+            loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+        elif self.args.param == 'x':
+            loss = self.criterion(pred_x, gt_local_q, gt_local_x, gt_local_q)
+        elif self.args.param == 'q':
+            loss = self.criterion(gt_local_x, pred_q, gt_local_x, gt_local_q)
+        else:
+            loss = self.criterion(gt_local_x, gt_local_q, gt_local_x, gt_local_q)
+        return pred_x, pred_q, loss
+
+
+class TesterDeepLO(Tester):
+    ACTION = "test_deeplo"
+
+    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
+                            gts_local, gt_local_x, gt_local_q, gts_global):
+        # compute model predictions and loss
+        pred_x, pred_q = self.model([imgs_0, imgs_1])
+
+        # rotation
+        if self.args.param == 'xq':
+            loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+        elif self.args.param == 'x':
+            loss = self.criterion(pred_x, gt_local_q, gt_local_x, gt_local_q)
+        elif self.args.param == 'q':
+            loss = self.criterion(gt_local_x, pred_q, gt_local_x, gt_local_q)
+        else:
+            loss = self.criterion(gt_local_x, gt_local_q, gt_local_x, gt_local_q)
+        return pred_x, pred_q, loss
 
 
 class OdomSeqRes:

@@ -12,16 +12,14 @@ import torch.nn.functional as F
 from .modules import Fire, FireDeconv, SELayer, ASPP
 
 
-class PointSegNet(nn.Module):
-    def __init__(self, input_shape, cfg):
-        super(PointSegNet, self).__init__()
-        bn_d = 0.1
-        num_classes = len(cfg['classes'])
-        self.p = cfg['dropout']
+class PSEncoder(nn.Module):
+    def __init__(self, input_shape, cfg, bn_d = 0.1):
+        super(PSEncoder, self).__init__()
+        bn_d = bn_d
         self.bypass = cfg['bypass']
         self.input_shape = input_shape
 
-        h, w, c = self.input_shape
+        c, h, w = self.input_shape
 
         ### Ecnoder part
         self.conv1a = nn.Sequential(nn.Conv2d(c, 64, kernel_size=3, stride=(1, 2), padding=1),
@@ -54,19 +52,10 @@ class PointSegNet(nn.Module):
 
         self.aspp = ASPP(512, [6, 9, 12])
 
-        ### Decoder part
-        self.fdeconv_el = FireDeconv(128, 32, 128, 128, bn=True, bn_d=bn_d)
-
-        self.fdeconv_1 = FireDeconv(512, 64, 128, 128, bn=True, bn_d=bn_d)
-        self.fdeconv_2 = FireDeconv(512, 64, 64, 64, bn=True, bn_d=bn_d)
-        self.fdeconv_3 = FireDeconv(128, 16, 32, 32, bn=True, bn_d=bn_d)
-        self.fdeconv_4 = FireDeconv(64, 16, 32, 32, bn=True, bn_d=bn_d)
-
-        self.drop = nn.Dropout2d(p=self.p)
-        self.conv2 = nn.Sequential(nn.Conv2d(64, num_classes, kernel_size=3, stride=1, padding=1))
+        self.output_shape = self.calc_output_shape()
 
     def forward(self, x):
-        x_1a = self.conv1a(x) # (H, W/2)
+        x_1a = self.conv1a(x)  # (H, W/2)
         x_1b = self.conv1b(x)
 
         ### Encoder forward
@@ -94,12 +83,49 @@ class PointSegNet(nn.Module):
             x_f7 += x_f6
         x_f8 = self.fire8(x_f7)
         x_f9 = self.fire9(x_f8)
-        x_se3  =self.se3(x_f9)
+        x_se3 = self.se3(x_f9)
         if self.bypass:
             x_se3 += x_f8
 
         # EL forward
         x_el = self.aspp(x_se3)
+        return x_1a, x_1b, x_se1, x_se2, x_se3, x_el
+
+    def calc_output_shape(self):
+        c, h, w = self.input_shape
+        input = torch.rand((1, c, h, w))
+        self.eval()
+        with torch.no_grad():
+            _, _, _, _, x_se3, _ = self.forward(input)
+        return x_se3.shape[1:]
+
+    def get_output_shape(self):
+        return self.output_shape
+
+
+class PSDecoder(nn.Module):
+    def __init__(self, input_shape, cfg):
+        super(PSDecoder, self).__init__()
+        bn_d = 0.1
+        num_classes = len(cfg['classes'])
+        self.input_shape = input_shape
+        self.p = cfg['dropout']
+
+
+        self.fdeconv_el = FireDeconv(128, 32, 128, 128, bn=True, bn_d=bn_d)
+
+        self.fdeconv_1 = FireDeconv(512, 64, 128, 128, bn=True, bn_d=bn_d)
+        self.fdeconv_2 = FireDeconv(512, 64, 64, 64, bn=True, bn_d=bn_d)
+        self.fdeconv_3 = FireDeconv(128, 16, 32, 32, bn=True, bn_d=bn_d)
+        self.fdeconv_4 = FireDeconv(64, 16, 32, 32, bn=True, bn_d=bn_d)
+
+        self.drop = nn.Dropout2d(p=self.p)
+        self.conv2 = nn.Sequential(nn.Conv2d(64, num_classes, kernel_size=3, stride=1, padding=1))
+
+        self.ouput_shape = self.calc_output_shape()
+
+    def forward(self, x):
+        x_1a, x_1b, x_se1, x_se2, x_se3, x_el = x
         x_el = self.fdeconv_el(x_el)
 
         ### Decoder forward
@@ -118,9 +144,38 @@ class PointSegNet(nn.Module):
 
         x_d = self.drop(x_fd4_fused)
         x = self.conv2(x_d)
+        return x
 
-        x_feat = x_se3
-        return x, x_feat
+    def calc_output_shape(self):
+        h, w, c = self.input_shape
+        input = torch.rand((2, 2, c, h, w))
+        self.eval()
+        with torch.no_grad():
+            out = self.forward(input)
+        return out.shape
+
+    def get_output_shape(self):
+        return self.output_shape
+
+
+class PointSegNet(nn.Module):
+    def __init__(self, cfg):
+        super(PointSegNet, self).__init__()
+
+        ### Ecnoder part
+        self.feat_encoder = PSEncoder(cfg)
+
+        ### Decoder part
+        self.feat_decoder = PSDecoder(cfg)
+
+    def forward(self, x):
+        x = self.feat_encoder(x)
+        x = self.feat_decoder(x)
+        return x
+
+    @property
+    def name(self):
+        return self.__class__.__name__.lower()
 
 
 feat_names = [
@@ -180,4 +235,5 @@ def plot_module(feats):
     im_path = "{}/{}_{}.png".format(str(img_path), index, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
     fig.savefig(im_path, bbox_inches='tight')
     plt.close(fig)
+
 

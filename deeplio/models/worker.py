@@ -34,12 +34,7 @@ def worker_init_fn(worker_id):
 class Worker:
     ACTION = "worker"
 
-    def __init__(self, parser):
-        args = parser.parse_args()
-        
-        with open(args.config) as f:
-            cfg = yaml.safe_load(f)
-
+    def __init__(self, args, cfg):
         self.dname = os.path.dirname(__file__)
         self.content_dir = os.path.abspath("{}/../..".format(self.dname))
 
@@ -99,6 +94,10 @@ class Worker:
 
         if self.tensor_writer:
             self.tensor_writer.close()
+
+    @property
+    def name(self):
+        return self.__class__.__name__
 
 
 

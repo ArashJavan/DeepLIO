@@ -209,6 +209,7 @@ class Kitti(data.Dataset):
         :param config: Configuration file including split settings
         :param transform:
         """
+        self.arch_type = config['arch']
         ds_config_common = config['datasets']
         ds_config = ds_config_common['kitti']
         self.seq_size = ds_config_common['sequence-size']
@@ -289,6 +290,7 @@ class Kitti(data.Dataset):
 
     def load_imus(self, dataset, velo_timestamps):
         imus = []
+        valids = []
         for i in range(self.seq_size - 1):
             velo_start_ts = velo_timestamps[i]
             velo_stop_ts = velo_timestamps[i+1]
@@ -301,13 +303,15 @@ class Kitti(data.Dataset):
                 self.logger.debug("Not enough OXT-samples: DS: {}_{}, len:{}, velo-timestamps: {}-{}".
                                   format(dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
                 imu_values = np.zeros((self.MIN_NUM_OXT_SAMPLES, 6), dtype=np.float)
+                valids.append(False)
             else:
                 oxts = dataset.oxts_unsync[oxt_indices]
                 imu_values = np.array([[oxt[0].ax, oxt[0].ay, oxt[0].az,
                                         oxt[0].wx, oxt[0].wy, oxt[0].wz]
                                        for oxt in oxts], dtype=np.float)
+                valids.append(True)
             imus.append(imu_values)
-        return imus
+        return imus, valids
 
     def transform_images(self):
         imgs_org = torch.stack([torch.from_numpy(im.transpose(2, 0, 1)) for im in self.images])
@@ -356,6 +360,26 @@ class Kitti(data.Dataset):
             raise Exception("Wrong index ({}) in {}_{}".format(idx, dataset.date, dataset.drive))
         return dataset, indices
 
+    def create_data_deepio(self, dataset, indices, velo_timespamps):
+        # load and transform imus
+        imus, valids = self.load_imus(dataset, velo_timespamps)
+        imus = self.transform_imus(imus)
+        data = {'imus': imus, 'valids': valids}
+        return data
+
+    def create_data_deeplo(self, dataset, indices, velo_timespamps):
+        # load and transform images
+        self.load_images(dataset, indices)
+        org_images, proc_images = self.transform_images()
+        data = {'images': proc_images, 'untrans-images': proc_images}
+        return data
+
+    def create_data_deeplio(self, dataset, indices, velo_timespamps):
+        imu_data = self.create_data_deepio(dataset, indices, velo_timespamps)
+        img_data = self.create_data_deeplo(dataset, indices, velo_timespamps)
+        data = {**imu_data, **img_data}
+        return data
+
     def __len__(self):
         return self.length
 
@@ -369,13 +393,14 @@ class Kitti(data.Dataset):
         # Get frame timestamps
         velo_timespamps = [dataset.timestamps_velo[idx] for idx in indices]
 
-        # load and transform images
-        self.load_images(dataset, indices)
-        org_images, proc_images = self.transform_images()
-
-        # load and transform imus
-        imus = self.load_imus(dataset, velo_timespamps)
-        imus = self.transform_imus(imus)
+        if self.arch_type == 'deepio':
+            arch_data = self.create_data_deepio(dataset, indices, velo_timespamps)
+        elif self.arch_type == 'deeplo':
+            arch_data = self.create_data_deeplo(dataset, indices, velo_timespamps)
+        elif self.arch_type == 'deeplio':
+            arch_data = self.create_data_deeplio(dataset, indices, velo_timespamps)
+        else:
+            raise ValueError("Wrong arch type {}".format(self.arch_type))
 
         # load and transform ground truth
         gts = torch.from_numpy(self.load_ground_truth(dataset, indices)).type(torch.float32)
@@ -383,7 +408,7 @@ class Kitti(data.Dataset):
         meta_data = {'index': [index], 'date': [dataset.date], 'drive': [dataset.drive], 'velo-index': [indices],
                      'velo-timestamps': [ts.timestamp() for ts in velo_timespamps]}
 
-        data = {'images': proc_images, 'imus': imus, 'gts': gts, 'meta': meta_data, 'untrans-images': org_images}
+        data = {'data': arch_data, 'gts': gts, 'meta': meta_data}
 
         end = time.time()
 

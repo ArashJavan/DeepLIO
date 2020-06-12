@@ -2,13 +2,14 @@ import os
 import sys
 import signal
 import argparse
+import yaml
 
 dname = os.path.abspath(os.path.dirname(__file__))
 content_dir = os.path.abspath("{}/..".format(dname))
 sys.path.append(dname)
 sys.path.append(content_dir)
 
-from deeplio.models.tester import Tester
+from deeplio.models.tester import TesterDeepIO, TesterDeepLO
 
 
 def signal_handler(signum, frame):
@@ -43,7 +44,18 @@ if __name__ == '__main__':
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    tester = Tester(parser)
+    args = parser.parse_args()
+
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f)
+
+    arch = cfg['arch'].lower()
+
+    if arch == 'deepio':
+        tester = TesterDeepIO(args, cfg)
+    elif arch == 'deeplo':
+        tester = TesterDeepLO(args, cfg)
+
     tester.run()
 
     print("Done!")

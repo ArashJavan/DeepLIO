@@ -20,27 +20,25 @@ from deeplio.losses import get_loss_function
 from deeplio.common import spatial, utils
 from deeplio.models import nets
 from deeplio.models.misc import PostProcessSiameseData
-from deeplio.models.worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
-from .transforms import ToTensor, Normalize, CenterCrop
+from .worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
 from .optimizer import create_optimizer
 
 
 class Trainer(Worker):
     ACTION = "train"
 
-    def __init__(self, parser):
-        super(Trainer, self).__init__(parser)
+    def __init__(self, args, cfg):
+        super(Trainer, self).__init__(args, cfg)
 
         if self.args.resume and self.args.evaluate:
-            print("Error: can either resume training or evaluate, not both at the same time!")
-            parser.print_help()
-            parser.exit(1)
+            raise ValueError("Error: can either resume training or evaluate, not both at the same time!")
 
         args = self.args
 
         self.start_epoch = args.start_epoch
         self.epochs = args.epochs
         self.best_acc = float('inf')
+        self.step_val = 0.
 
         # create the folder for saving training checkpoints
         self.checkpoint_dir = self.out_dir
@@ -48,6 +46,7 @@ class Trainer(Worker):
 
         # preapre dataset and dataloaders
         transform = None
+        self.data_last = None
 
         self.train_dataset = ds.Kitti(config=self.cfg, transform=transform)
         self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
@@ -66,36 +65,35 @@ class Trainer(Worker):
         self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size,
                                                      shuffle=True, device=self.device)
 
-        self.model = nets.get_model(input_shape=(self.im_height_model, self.im_width_model,
-                                                 self.n_channels), cfg=self.cfg['arch'])
-        self.model.to(self.device) #should be before creating optimizer
+        self.model = nets.get_model(input_shape=(self.n_channels, self.im_height_model, self.im_width_model),
+                                    cfg=self.cfg, device=self.device)
 
         self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
         self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.args.lr_decay, gamma=0.5)
         self.criterion = get_loss_function(self.cfg, args.device)
 
         # debugging and visualizing
-        self.logger.print("DeepLIO Training Configurations:")
+        self.logger.print("System Training Configurations:")
         self.logger.print("args: {}".
                           format(self.args))
 
         # optionally resume from a checkpoint
         if args.resume or args.evaluate:
-            ckp_path = ""
-            if os.path.isfile(args.resume):
-                ckp_path = args.resume
-            elif os.path.isfile(args.evaluate):
-                ckp_path = args.evaluate
-            else:
-                self.logger.error("no checkpoint found at '{}'".format(ckp_path))
-                parser.print_help()
-                parser.exit(1)
+            model_cfg = self.cfg[self.cfg['arch']]
+            pretrained = self.model.pretrained
+            if not pretrained:
+                self.logger.error("no model checkpoint loaded!")
+                raise ValueError("no model checkpoint loaded!")
 
-            self.logger.info("loading checkpoint '{}'".format(ckp_path))
+            ckp_path = model_cfg['model-path']
+            if not os.path.isfile(args.resume):
+                self.logger.error("no checkpoint found at '{}'".format(ckp_path))
+                raise ValueError("no checkpoint found at '{}'".format(ckp_path))
+
+            self.logger.info("loading from checkpoint '{}'".format(ckp_path))
             checkpoint = torch.load(ckp_path, map_location=self.device)
             self.start_epoch = checkpoint['epoch']
             self.best_acc = checkpoint['best_acc']
-            self.model.load_state_dict(checkpoint['state_dict'])
             self.optimizer.load_state_dict(checkpoint['optimizer'])
             self.logger.info("loaded checkpoint '{}' (epoch {})".format(ckp_path, checkpoint['epoch']))
 
@@ -103,11 +101,23 @@ class Trainer(Worker):
         self.logger.print(self.train_dataset)
         self.logger.print(self.val_dataset)
 
-        # log the network structure and number of params
-        #imgs = torch.randn((2, 3, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
-        #self.model.eval()
-        #self.logger.print(summary(self.model, imgs))
-        #self.tensor_writer.add_graph(self.model, imgs)
+        self.post_init()
+
+    def post_init(self):
+        raise NotImplementedError()
+
+    def post_train_iter(self):
+        raise NotImplementedError()
+
+    def post_valiate(self):
+        raise NotImplementedError()
+
+    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
+                            gts_local, gt_local_x, gt_local_q, gts_global):
+        pred_x = None
+        pred_q = None
+        loss = None
+        return pred_x, pred_q, loss
 
     def run(self):
         self.is_running = True
@@ -125,7 +135,7 @@ class Trainer(Worker):
             self.logger.info("Starting epoch:{}, lr:{}".format(epoch, self.lr_scheduler.get_last_lr()[0]))
 
             # train for one epoch
-            self.train_data(epoch)
+            self.train(epoch)
 
             acc = self.validate(epoch)
 
@@ -133,12 +143,20 @@ class Trainer(Worker):
             is_best = acc < self.best_acc
             self.best_acc = min(acc, self.best_acc)
 
+            filename = 'cpkt_{}'.format(self.model.name)
             self.save_checkpoint({
                 'epoch': epoch,
                 'state_dict': self.model.state_dict(),
                 'best_acc': self.best_acc,
                 'optimizer' : self.optimizer.state_dict(),
-            }, is_best)
+            }, is_best, filename)
+
+            feat_nets = self.model.get_feat_networks()
+            for feat_net in feat_nets:
+                filename = 'cpkt_{}'.format(feat_net.name)
+                self.save_checkpoint({
+                    'state_dict': feat_net.state_dict(),
+                }, is_best, filename)
 
             self.lr_scheduler.step()
             self.tensor_writer.add_scalar("LR", self.lr_scheduler.get_last_lr()[0], epoch)
@@ -146,7 +164,7 @@ class Trainer(Worker):
         self.logger.info("Training done!")
         self.close()
 
-    def train_data(self, epoch):
+    def train(self, epoch):
         writer = self.tensor_writer
         optimizer = self.optimizer
         criterion = self.criterion
@@ -167,13 +185,15 @@ class Trainer(Worker):
             prefix="Epoch: [{}]".format(epoch))
 
         end = time.time()
-        data_last = None
-        step_val = 0.
+
         for idx, data in enumerate(self.train_dataloader):
 
             # check if we can run or are we stopped
             if not self.is_running:
                 break
+
+            if self.data_last is None:
+                self.data_last = data
 
             # measure data loading time
             data_time.update(time.time() - end)
@@ -186,8 +206,8 @@ class Trainer(Worker):
             gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
 
             # compute model predictions and loss
-            pred_x, pred_q, mask0, mask1 = model([imgs_0, imgs_1, imus])
-            loss = criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+            pred_x, pred_q, loss = self.eval_model_and_loss(imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
+                                                            gts_local, gt_local_x, gt_local_q, gts_global)
 
             # measure accuracy and record loss
             losses.update(loss.detach().item(), len(pred_x))
@@ -224,29 +244,32 @@ class Trainer(Worker):
                 progress.display(idx)
 
                 ### update tensorboard
-                step_val = epoch * len(self.train_dataloader) + idx
-                self.tensor_writer.add_scalar("Train/Loss", losses.avg, step_val)
-                self.tensor_writer.add_scalar("Train/Gradnorm", calc_grad_norm(self.model.parameters()), step_val)
+                self.step_val = epoch * len(self.train_dataloader) + idx
+                self.tensor_writer.add_scalar("Train/Loss", losses.avg, self.step_val)
+                self.tensor_writer.add_scalar("Train/Gradnorm", calc_grad_norm(self.model.parameters()), self.step_val)
                 self.tensor_writer.flush()
-            data_last = data
+            self.data_last = data
+            break
+
+        self.post_train_iter()
 
         # save infos to -e.g. gradient hists and images to tensorbaord and the end of training
-        b, s, c, h, w = np.asarray(data_last['images'].shape)
-        imgs = data_last['images'].reshape(b*s, c, h, w)
-        imgs_remossion = imgs[:, 1, :, :]
-        imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
-        imgs_remossion = torch.stack(imgs_remossion)
-        imgs_remossion = make_grid(imgs_remossion, nrow=2)
-        self.tensor_writer.add_image("Images/Remissions", imgs_remossion, global_step=step_val)
-
-        imgs_range = imgs[:, 0, :, :]
-        imgs_range = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_range]
-        imgs_range = torch.stack(imgs_range)
-        imgs_range = make_grid(imgs_range, nrow=2)
-        self.tensor_writer.add_image("Images/Range", imgs_range, global_step=step_val)
+        # b, s, c, h, w = np.asarray(data_last['images'].shape)
+        # imgs = data_last['images'].reshape(b*s, c, h, w)
+        # imgs_remossion = imgs[:, 1, :, :]
+        # imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
+        # imgs_remossion = torch.stack(imgs_remossion)
+        # imgs_remossion = make_grid(imgs_remossion, nrow=2)
+        # self.tensor_writer.add_image("Images/Remissions", imgs_remossion, global_step=step_val)
+        #
+        # imgs_range = imgs[:, 0, :, :]
+        # imgs_range = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_range]
+        # imgs_range = torch.stack(imgs_range)
+        # imgs_range = make_grid(imgs_range, nrow=2)
+        # self.tensor_writer.add_image("Images/Range", imgs_range, global_step=step_val)
 
         for tag, param in self.model.named_parameters():
-            self.tensor_writer.add_histogram(tag, param.data.detach().cpu().numpy(), step_val)
+            self.tensor_writer.add_histogram(tag, param.data.detach().cpu().numpy(), self.step_val)
 
     def validate(self, epoch):
         writer = self.tensor_writer
@@ -280,8 +303,8 @@ class Trainer(Worker):
                 gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
 
                 # compute model predictions and loss
-                pred_x, pred_q, mask0, mask1 = model([imgs_0, imgs_1])
-                loss = criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+                pred_x, pred_q, loss = self.eval_model_and_loss(imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
+                                                                gts_local, gt_local_x, gt_local_q, gts_global)
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), len(pred_x))
@@ -297,15 +320,78 @@ class Trainer(Worker):
                     self.tensor_writer.add_scalar\
                         ("Val/Loss", losses.avg, step_val)
                     self.tensor_writer.flush()
+                break
+
+        self.post_valiate()
         return losses.avg
 
-    def save_checkpoint(self, state, is_best):
-        epoch = state['epoch']
-        filename = '{}/cpkt_{}.tar'.format(self.checkpoint_dir, self.model.name)
-        torch.save(state, filename)
+    def save_checkpoint(self, state, is_best, filename="checkpoint"):
+        file_path = '{}/{}.tar'.format(self.checkpoint_dir, filename)
+        torch.save(state, file_path)
         if is_best:
-            filename_best = '{}/cpkt_{}_best.tar'.format(self.checkpoint_dir, self.model.name)
-            shutil.copyfile(filename, filename_best)
+            file_path_best = '{}/{}_best.tar'.format(self.checkpoint_dir, filename)
+            shutil.copyfile(file_path, file_path_best)
+
+
+class TrainerDeepIO(Trainer):
+    ACTION = "train_deepio"
+
+    def post_init(self):
+        # log the network structure and number of params
+        # log the network structure and number of params
+        self.logger.info("{}: Network architecture:".format(self.model.name))
+        imu = torch.rand((1, 2, 2, 6)).to(self.device)
+        self.model.eval()
+        self.logger.print(summary(self.model, imu))
+
+    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus, gts_local, gt_local_x, gt_local_q, gts_global):
+        # compute model predictions and loss
+        pred_x, pred_q = self.model(imus)
+        loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+        return pred_x, pred_q, loss
+
+    def post_train_iter(self):
+        pass
+
+    def post_valiate(self):
+        pass
+
+
+class TrainerDeepLO(Trainer):
+    ACTION = "train_deeplo"
+
+    def post_init(self):
+        # log the network structure and number of params
+        # log the network structure and number of params
+        self.logger.info("{}: Network architecture:".format(self.model.name))
+        data = torch.randn((2, 1, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
+        self.model.eval()
+        self.logger.print(summary(self.model, data))
+
+    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus, gts_local, gt_local_x, gt_local_q, gts_global):
+        # compute model predictions and loss
+        pred_x, pred_q = self.model([imgs_0, imgs_1])
+        loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+        return pred_x, pred_q, loss
+
+    def post_train_iter(self):
+        # save infos to -e.g. gradient hists and images to tensorbaord and the end of training
+        b, s, c, h, w = np.asarray(self.data_last['images'].shape)
+        imgs = self.data_last['images'].reshape(b*s, c, h, w)
+        imgs_remossion = imgs[:, 1, :, :]
+        imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
+        imgs_remossion = torch.stack(imgs_remossion)
+        imgs_remossion = make_grid(imgs_remossion, nrow=2)
+        self.tensor_writer.add_image("Images/Remissions", imgs_remossion, global_step=self.step_val)
+
+        imgs_range = imgs[:, 0, :, :]
+        imgs_range = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_range]
+        imgs_range = torch.stack(imgs_range)
+        imgs_range = make_grid(imgs_range, nrow=2)
+        self.tensor_writer.add_image("Images/Range", imgs_range, global_step=self.step_val)
+
+    def post_valiate(self):
+        pass
 
 
 def calc_grad_norm(parameters):

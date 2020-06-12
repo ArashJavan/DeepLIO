@@ -5,25 +5,28 @@ def deeplio_collate(batch):
     r"""Puts each data field into a tensor with outer dimension batch size"""
 
     # merging images in all batches
-    try:
-        images = torch.stack([b['images'] for b in batch])
-    except TypeError as ex:
-        print(ex)
-
-    untrans_images = torch.stack([b['untrans-images'] for b in batch])
-
-    # IMU and ground-truth measurments can have different length btw. each pair of lidar frames,
-    # so we do not change their size and let them as their are
-    imus = [b['imus'] for b in batch]
-    gts = torch.stack([b['gts'] for b in batch])
-
-    # also vladiation field and meta-datas need not to be changed
-    metas = [b['meta'] for b in batch]
+    data_tmp = batch[0]['data']
+    has_imgs = 'images' in data_tmp
+    has_imus = 'imus' in data_tmp
 
     res ={}
-    res['images'] = images
-    res['untrans-images'] = untrans_images
-    res['imus'] = imus
+    if has_imgs:
+        images = torch.stack([b['data']['images'] for b in batch])
+        untrans_images = torch.stack([b['data']['untrans-images'] for b in batch])
+        res['images'] = images
+        res['untrans-images'] = untrans_images
+
+    if has_imus:
+        # IMU and ground-truth measurments can have different length btw. each pair of lidar frames,
+        # so we do not change their size and let them as their are
+        imus = [b['data']['imus'] for b in batch]
+        valids = [b['data']['valids'] for b in batch]
+        res['imus'] = imus
+        res['valids'] =  valids
+
+    gts = torch.stack([b['gts'] for b in batch])
+    metas = [b['meta'] for b in batch]
+
     res['gts'] = gts
     res['metas'] = metas
     return res

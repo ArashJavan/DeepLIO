@@ -4,27 +4,38 @@ import torch.nn as nn
 
 class BaseNet(nn.Module):
     """
-    DeepLIO with Simple Siamese SqueezeNet
+    Basenet for all modules
     """
-    def __init__(self, input_shape, cfg):
+    def __init__(self):
         super(BaseNet, self).__init__()
-        self.cfg = cfg
-        self.p = cfg['dropout']
+        self.pretrained = False
 
-        self.input_shape = input_shape
-
-        # number of channels, width and height
-        self.h, self.w, self.c = input_shape
-
-    def conv_forward(self, x):
-        raise NotImplementedError()
-
-    def forward(self, x):
+    def get_output_shape(self):
         raise NotImplementedError()
 
     @property
     def name(self):
-        return self.__class__.__name__
+        return self.__class__.__name__.lower()
+
+    @property
+    def device(self):
+        devices = ({param.device for param in self.parameters()} |
+                   {buf.device for buf in self.buffers()})
+        if len(devices) != 1:
+            raise RuntimeError('Cannot determine device: {} different devices found'
+                               .format(len(devices)))
+        return next(iter(devices))
+
+
+class BaseDeepLIO(BaseNet):
+    """
+    Base network for just main modules, e.g. deepio, deeplo and deeplios
+    """
+    def get_feat_networks(self):
+        raise NotImplementedError()
+
+    def initialize(self):
+        raise NotImplementedError()
 
 
 def num_flat_features(x):

@@ -2,13 +2,14 @@ import os
 import sys
 import signal
 import argparse
+import yaml
 
 dname = os.path.abspath(os.path.dirname(__file__))
 content_dir = os.path.abspath("{}/..".format(dname))
 sys.path.append(dname)
 sys.path.append(content_dir)
 
-from deeplio.models.trainer import Trainer
+from deeplio.models.trainer import TrainerDeepIO, TrainerDeepLO
 
 
 def signal_handler(signum, frame):
@@ -56,7 +57,18 @@ if __name__ == '__main__':
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    trainer = Trainer(parser)
+    args = parser.parse_args()
+
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f)
+
+    arch = cfg['arch'].lower()
+
+    if arch == 'deepio':
+        trainer = TrainerDeepIO(args, cfg)
+    elif arch == 'deeplo':
+        trainer = TrainerDeepLO(args, cfg)
+
     trainer.run()
 
     print("Done!")

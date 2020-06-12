@@ -29,17 +29,91 @@ datasets:
       #mean: [-0.0581, 0.4165, -0.8585, 8.2594, 0.2164]
       #std: [10.0366, 7.4936, 0.8761, 9.5056, 0.1740]
 
-arch:
+### DNN Models
+
+# Lidar and IMU (DeepLIO) Neuronal Network
+deeplio:
   name: "deeplio1" # [deeplioS0, deeplioS1, DeepLIO0, DeepLIO1]
   dropout: 0.25
-  feature-net:
-    name: "simple0" # [simple0, simple1]
-    pretrained: false
-    model-path: "resources/checkpoint_30_20200504_161441.tar"
-    dropout: 0.25
-    classes: ['unknown', 'object']
-    bypass: true
+  fusion: "cat"
+  odom-feat-net: "rnn"
+  rnn:
+    type: "lstm"
+    hidden-size: 512
+    num-layers: 2
+    bidirectional: false
+  fc:
+    size: [512]
 
+### DeepLO Configurations ###########################
+deeplo:
+  #name: "deeplo" # [deeplioS0, deeplioS1, DeepLIO0, DeepLIO1]
+  dropout: 0.25
+  pretrained: false
+  model-path: ""
+  feature-net:
+    name: "deeplo-feat-pointseg" # [simple0, simple1]
+    pretrained: false
+    model-path: ""
+  odom-feat-net:
+    name: "deeplo-odom-feat-fc" # [simple0, simple1]
+    pretrained: false
+    model-path: ""
+
+# odometry feature network with rnn-layers
+deeplo-odom-feat-rnn:
+    type: "lstm"
+    hidden-size: 512
+    num-layers: 2
+    bidirectional: false
+
+# odometry feature network with fully connected layers
+deeplo-odom-feat-fc:
+    size: [512]
+    fusion: cat # [cat, sub]
+
+# feature network simple0 with conv layers
+deeplo-feat-simple-0:
+  dropout: 0.
+  fusion: cat # [cat, sub]
+
+# feature network simple0 with bypassed conv layers
+deeplo-feat-simple-1:
+  dropout: 0.
+  fusion: cat # [cat, sub]
+  bypass: true
+
+# feature network pointseg
+deeplo-feat-pointseg:  # pointseg feature
+  dropout: 0.
+  classes: ['unknown', 'object']
+  bypass: true
+  fusion: cat # [cat, sub]
+  part: "encoder" # [encoder, encoder+decoder]
+
+### DeepIO Configurations ###########################
+deepio:
+  dropout: 0.25
+  pretrained: false
+  model-path: "outputs/train_deepio_20200612_104605/cpkt_DeepIO_DeepIOFeat1.tar"
+  feature-net:
+    name: "deepio1"
+    pretrained: true
+    model-path: "outputs/train_deepio_20200612_104605/cpkt_DeepIOFeat1.tar"
+
+# IMU Feature Netowrks
+deepio0:  # FC
+  input-size: 6  # !fixed! do not chanage
+  hidden-size: [256, 256]
+
+deepio1: # RNN
+  type: "lstm"
+  input-size: 6  # !fixed! do not chanage
+  hidden-size: 256
+  num-layers: 2
+  bidirectional: true
+
+### Loss Configurations ###########################
 losses:
   active: 'lwsloss'
   hwsloss:
@@ -53,10 +127,12 @@ losses:
   geoloss:
     params:
 
-
+arch: "deeplo"  # [deepio, deeplo, deeplio]
 current-dataset: 'kitti'
 channels: [3, 4] # channesl: x=0, y=1, z=2, range(x,y,z)=3, remissions=4
 optimizer: 'adam'
+
+
 
 
 

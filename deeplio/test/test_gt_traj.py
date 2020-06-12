@@ -89,10 +89,6 @@ class TestTraj(Worker):
             [batch_time],
             prefix='Test: ')
 
-        seq_names = []
-        last_seq = None
-        curr_seq = None
-
         end = time.time()
 
         global_traj = []
