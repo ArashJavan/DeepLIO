@@ -1,5 +1,4 @@
 import os
-import yaml
 import datetime
 import time
 import logging
@@ -14,6 +13,7 @@ from torch.backends import cudnn
 from tensorboardX import SummaryWriter
 
 from deeplio.common import *
+from .misc import build_config_container
 
 SEED = 42
 
@@ -38,16 +38,19 @@ class Worker:
         self.dname = os.path.dirname(__file__)
         self.content_dir = os.path.abspath("{}/../..".format(self.dname))
 
+        # build config container for other NN-models
+        config_container = build_config_container(cfg, args)
+
         self.args = args
         self.cfg = cfg
-        self.ds_cfg = self.cfg['datasets']
-        self.curr_dataset_cfg = self.cfg['datasets'][self.cfg['current-dataset']]
-        self.seq_size = self.ds_cfg['sequence-size']
+        self.ds_cfg = config_container.ds_cfg #  self.cfg['datasets']
+        self.curr_dataset_cfg = config_container.curr_dataset_cfg #  self.cfg['datasets'][self.cfg['current-dataset']]
+        self.seq_size = config_container.seq_size # self.ds_cfg['sequence-size']
+        self.combinations = config_container.combinations # np.array(self.ds_cfg['combinations'])
+        self.device = config_container.device
 
         self.batch_size = self.args.batch_size
         self.num_workers = self.args.workers
-
-        self.device = args.device
 
         # get input images shape and channels
         crop_height, crop_width = self.curr_dataset_cfg.get('crop-factors', [0, 0])
@@ -56,7 +59,9 @@ class Worker:
         self.im_width_model = self.im_width - (2 * crop_width)
 
         self.n_channels = len(self.cfg['channels'])
-        
+
+
+
         # create output folder structure
         self.out_dir = "{}/outputs/{}_{}".format(self.content_dir, self.ACTION, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
 

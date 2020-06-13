@@ -6,8 +6,8 @@ from .deepio_nets import DeepIO, DeepIOFeat0, DeepIOFeat1, DeepIOFeat11
 from .deeplo_nets import DeepLO, DeepLOPointSegFeat, DeepLOOdomFeatFC
 from .deeplio_nets import DeepLIONBase
 
-
 net_logger = get_app_logger()
+
 
 def get_model(input_shape, cfg, device):
     arch_name = cfg['arch'].lower()

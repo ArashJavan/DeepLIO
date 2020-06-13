@@ -212,7 +212,7 @@ class Kitti(data.Dataset):
         self.arch_type = config['arch']
         ds_config_common = config['datasets']
         ds_config = ds_config_common['kitti']
-        self.seq_size = ds_config_common['sequence-size']
+        self.seq_size = ds_config_common['sequence-size'] + 1 # Increment because we need always one sample more
         self.inv_depth = ds_config.get('inverse-depth', False)
         self.mean_img = ds_config['mean-image']
         self.std_img = ds_config['std-image']

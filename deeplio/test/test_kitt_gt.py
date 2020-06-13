@@ -53,7 +53,7 @@ class TestKittiGt(Worker):
                                                             worker_init_fn = worker_init_fn,
                                                             collate_fn = ds.deeplio_collate)
 
-        self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size)
+        self.post_processor = DataCombiCreater(seq_size=self.seq_size, batch_size=self.batch_size)
 
     def run(self):
         for idx, data in enumerate(self.train_dataloader):

@@ -28,7 +28,7 @@ sys.path.append(content_dir)
 
 from deeplio import datasets as ds
 from deeplio.common import spatial, utils
-from deeplio.models.misc import PostProcessSiameseData
+from deeplio.models.misc import DataCombiCreater
 from deeplio.models.worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
 from deeplio.models.transforms import ToTensor, Normalize, CenterCrop
 
@@ -63,7 +63,7 @@ class TestTraj(Worker):
                                                            worker_init_fn = worker_init_fn,
                                                            collate_fn = ds.deeplio_collate)
 
-        self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=False)
+        self.post_processor = DataCombiCreater(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=False)
 
         # debugging and visualizing
         self.logger.print("DeepLIO TestTraj Configurations:")

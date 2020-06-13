@@ -19,7 +19,7 @@ from deeplio import datasets as ds
 from deeplio.losses.losses import LWSLoss, HWSLoss
 from deeplio.common import spatial, utils
 from deeplio.models import nets
-from deeplio.models.misc import PostProcessSiameseData
+from deeplio.models.misc import DataCombiCreater
 from deeplio.models.worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
 from deeplio.losses import get_loss_function
 
@@ -56,10 +56,10 @@ class Tester(Worker):
                                                            worker_init_fn = worker_init_fn,
                                                            collate_fn = ds.deeplio_collate)
 
-        self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size,
-                                                     shuffle=False, device=self.device)
+        self.post_processor = DataCombiCreater(device=self.device)
         self.model = nets.get_model(input_shape=(self.n_channels, self.im_height_model, self.im_width_model),
-                                    cfg=self.cfg, device=self.device)
+                                    cfg=self.cfg, sequence_size=self.seq_size,
+                                    combinations=self.combinations,device=self.device)
         self.criterion = get_loss_function(self.cfg, args.device)
 
         self.tensor_writer = tensorboard.SummaryWriter(log_dir=self.runs_dir)

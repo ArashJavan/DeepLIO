@@ -19,7 +19,7 @@ from deeplio import datasets as ds
 from deeplio.losses import get_loss_function
 from deeplio.common import spatial, utils
 from deeplio.models import nets
-from deeplio.models.misc import PostProcessSiameseData
+from deeplio.models.misc import DataCombiCreater
 from .worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
 from .optimizer import create_optimizer
 
@@ -62,8 +62,8 @@ class Trainer(Worker):
                                                           worker_init_fn=worker_init_fn,
                                                           collate_fn = ds.deeplio_collate)
 
-        self.post_processor = PostProcessSiameseData(seq_size=self.seq_size, batch_size=self.batch_size,
-                                                     shuffle=True, device=self.device)
+        self.data_permuter = DataCombiCreater(combinations=self.combinations,
+                                              device=self.device)
 
         self.model = nets.get_model(input_shape=(self.n_channels, self.im_height_model, self.im_width_model),
                                     cfg=self.cfg, device=self.device)
@@ -112,8 +112,7 @@ class Trainer(Worker):
     def post_valiate(self):
         raise NotImplementedError()
 
-    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
-                            gts_local, gt_local_x, gt_local_q, gts_global):
+    def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
         pred_x = None
         pred_q = None
         loss = None
@@ -199,15 +198,14 @@ class Trainer(Worker):
             data_time.update(time.time() - end)
 
             # prepare data
-            imgs_0, imgs_1,  imgs_untrans_0, imgs_untrans_1, imus, gts_local, gts_global = self.post_processor(data)
+            imgs, imus, gts_local = self.data_permuter(data)
 
             # prepare ground truth tranlational and rotational part
             gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
             gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
 
             # compute model predictions and loss
-            pred_x, pred_q, loss = self.eval_model_and_loss(imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
-                                                            gts_local, gt_local_x, gt_local_q, gts_global)
+            pred_x, pred_q, loss = self.eval_model_and_loss(imgs,imus, gt_local_x, gt_local_q)
 
             # measure accuracy and record loss
             losses.update(loss.detach().item(), len(pred_x))
@@ -296,7 +294,7 @@ class Trainer(Worker):
                     return 0
 
                     # prepare data
-                imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus, gts_local, gts_global = self.post_processor(data)
+                imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus, gts_local, gts_global = self.data_permuter(data)
 
                 # prepare ground truth tranlational and rotational part
                 gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
@@ -344,7 +342,7 @@ class TrainerDeepIO(Trainer):
         self.model.eval()
         self.logger.print(summary(self.model, imu))
 
-    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus, gts_local, gt_local_x, gt_local_q, gts_global):
+    def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
         # compute model predictions and loss
         pred_x, pred_q = self.model(imus)
         loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
@@ -364,13 +362,13 @@ class TrainerDeepLO(Trainer):
         # log the network structure and number of params
         # log the network structure and number of params
         self.logger.info("{}: Network architecture:".format(self.model.name))
-        data = torch.randn((2, 1, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
+        data = torch.randn((2, self.seq_size+1, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
         self.model.eval()
         self.logger.print(summary(self.model, data))
 
-    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus, gts_local, gt_local_x, gt_local_q, gts_global):
+    def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
         # compute model predictions and loss
-        pred_x, pred_q = self.model([imgs_0, imgs_1])
+        pred_x, pred_q = self.model(imgs)
         loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
         return pred_x, pred_q, loss
 
