@@ -259,7 +259,7 @@ class Kitti(data.Dataset):
 
         self.length = self.bins.flatten()[-1] + 1
 
-        self.logger = logger.global_logger
+        self.logger = logger.get_app_logger()
 
     @property
     def seq_size(self):

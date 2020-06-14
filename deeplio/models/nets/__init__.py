@@ -9,10 +9,13 @@ from .imu_feat_nets import ImuFeatFC, ImufeatRNN0, ImuFeatRnn1
 from .lidar_feat_nets import LidarPointSegFeat, LidarSimpleFeat0, LidarSimpleFeat1
 from .odom_feat_nets import OdomFeatFC, OdomFeatRNN
 
-net_logger = get_app_logger()
+net_logger = None
 
 
 def get_model(input_shape, cfg, device):
+    global net_logger
+
+    net_logger = get_app_logger()
     arch_name = cfg['arch'].lower()
 
     if arch_name == 'deepio':

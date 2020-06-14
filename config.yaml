@@ -71,8 +71,8 @@ deepio:
   model-path: ""
   imu-feat-net:
     name: "imu-feat-rnn"  # [fc, rnn]
-    pretrained: true
-    model-path: "outputs/train_deepio_20200614_153226/cpkt_imufeatrnn0.tar"
+    pretrained: false
+    model-path: ""
 
 ### Lidar Feature Netowrks ###########################
 # feature network simple0 with conv layers

@@ -78,8 +78,7 @@ class Worker:
             log_level = logging.DEBUG
         else:
             log_level = logging.INFO
-        self.logger = logger.PyLogger(filename=flog_name, level=log_level)
-        logger.global_logger = self.logger
+        self.logger = logger.get_app_logger(filename=flog_name, level=log_level)
         self.is_running = False
 
     def run(self):
