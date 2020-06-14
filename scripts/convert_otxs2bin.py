@@ -1,15 +1,11 @@
-import os
-import sys
-import time
 import argparse
-import glob
-import threading
-import multiprocessing
+import os
+import pickle
+import sys
 from multiprocessing import Pool
 from pathlib import Path
+
 import tqdm
-import numpy as np
-import pickle
 
 dname = os.path.dirname(__file__)
 module_dir = os.path.abspath("{}/deeplio".format(dname))
@@ -18,7 +14,6 @@ sys.path.append(dname)
 sys.path.append(module_dir)
 sys.path.append(content_dir)
 
-from deeplio.common import utils
 from deeplio.datasets import KittiRawData
 
 

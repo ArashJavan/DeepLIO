@@ -1,7 +1,8 @@
-import os
-import sys
-import signal
 import argparse
+import os
+import signal
+import sys
+
 import yaml
 
 dname = os.path.abspath(os.path.dirname(__file__))
@@ -9,7 +10,7 @@ content_dir = os.path.abspath("{}/..".format(dname))
 sys.path.append(dname)
 sys.path.append(content_dir)
 
-from deeplio.models.trainer import TrainerDeepIO, TrainerDeepLO
+from deeplio.models.trainer import TrainerDeepIO, TrainerDeepLO, TrainerDeepLIO
 
 
 def signal_handler(signum, frame):
@@ -68,7 +69,8 @@ if __name__ == '__main__':
         trainer = TrainerDeepIO(args, cfg)
     elif arch == 'deeplo':
         trainer = TrainerDeepLO(args, cfg)
-
+    elif arch == 'deeplio':
+        trainer = TrainerDeepLIO(args, cfg)
     trainer.run()
 
     print("Done!")

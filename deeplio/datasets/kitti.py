@@ -1,19 +1,16 @@
-import os
-import torch
-import glob
 import datetime as dt
+import glob
+import os
 import pickle
+import time  # for start stop calc
 from threading import Thread
 
-import time # for start stop calc
-
 import numpy as np
-
+import torch
 import torch.utils.data as data
 
 from deeplio.common import utils, logger
 from deeplio.common.laserscan import LaserScan
-from deeplio.common.spatial import rotation_matrix_to_quaternion
 
 
 class KittiRawData:
@@ -212,7 +209,8 @@ class Kitti(data.Dataset):
         self.arch_type = config['arch']
         ds_config_common = config['datasets']
         ds_config = ds_config_common['kitti']
-        self.seq_size = ds_config_common['sequence-size'] + 1 # Increment because we need always one sample more
+        self._seq_size = ds_config_common['sequence-size'] # Increment because we need always one sample more
+        self.internal_seq_size = self.seq_size + 1
         self.inv_depth = ds_config.get('inverse-depth', False)
         self.mean_img = ds_config['mean-image']
         self.std_img = ds_config['std-image']
@@ -230,7 +228,7 @@ class Kitti(data.Dataset):
         self.datasets = []
         self.length_each_drive = []
         self.bins = []
-        self.images = [None] * self.seq_size
+        self.images = [None] * self.internal_seq_size
 
         root_path_sync = ds_config['root-path-sync']
         root_path_unsync = ds_config['root-path-unsync']
@@ -263,6 +261,15 @@ class Kitti(data.Dataset):
 
         self.logger = logger.global_logger
 
+    @property
+    def seq_size(self):
+        return self._seq_size
+
+    @seq_size.setter
+    def seq_size(self, size):
+        self.seq_size = size
+        self.internal_seq_size = size + 1
+
     def load_ground_truth(self, dataset, indices):
         gts_alls = dataset.oxts_sync[indices]
         gts = []
@@ -275,13 +282,13 @@ class Kitti(data.Dataset):
         return np.array(gts)
 
     def load_images(self, dataset, indices):
-        threads = [None] * self.seq_size
+        threads = [None] * self.internal_seq_size
 
-        for i in range(self.seq_size):
+        for i in range(self.internal_seq_size):
             threads[i] = Thread(target=self.load_image, args=(dataset, indices[i], i))
             threads[i].start()
 
-        for i in range(self.seq_size):
+        for i in range(self.internal_seq_size):
             threads[i].join()
 
     def load_image(self, dataset, ds_index, img_index):
@@ -291,7 +298,7 @@ class Kitti(data.Dataset):
     def load_imus(self, dataset, velo_timestamps):
         imus = []
         valids = []
-        for i in range(self.seq_size - 1):
+        for i in range(self.internal_seq_size - 1):
             velo_start_ts = velo_timestamps[i]
             velo_stop_ts = velo_timestamps[i+1]
 
@@ -351,32 +358,32 @@ class Kitti(data.Dataset):
 
         # get frame indices
         len_ds = len(dataset)
-        if idx <= len_ds - self.seq_size:
-            indices = list(range(idx, idx + self.seq_size))
-        elif (len_ds - self.seq_size) < idx < len_ds:
-            indices = list(range(len_ds - self.seq_size, len_ds))
+        if idx <= len_ds - self.internal_seq_size:
+            indices = list(range(idx, idx + self.internal_seq_size))
+        elif (len_ds - self.internal_seq_size) < idx < len_ds:
+            indices = list(range(len_ds - self.internal_seq_size, len_ds))
         else:
             self.logger.error("Wrong index ({}) in {}_{}".format(idx, dataset.date, dataset.drive))
             raise Exception("Wrong index ({}) in {}_{}".format(idx, dataset.date, dataset.drive))
         return dataset, indices
 
-    def create_data_deepio(self, dataset, indices, velo_timespamps):
+    def create_imu_data(self, dataset, indices, velo_timespamps):
         # load and transform imus
         imus, valids = self.load_imus(dataset, velo_timespamps)
         imus = self.transform_imus(imus)
         data = {'imus': imus, 'valids': valids}
         return data
 
-    def create_data_deeplo(self, dataset, indices, velo_timespamps):
+    def create_lidar_data(self, dataset, indices, velo_timespamps):
         # load and transform images
         self.load_images(dataset, indices)
         org_images, proc_images = self.transform_images()
-        data = {'images': proc_images, 'untrans-images': proc_images}
+        data = {'images': proc_images, 'untrans-images': org_images}
         return data
 
     def create_data_deeplio(self, dataset, indices, velo_timespamps):
-        imu_data = self.create_data_deepio(dataset, indices, velo_timespamps)
-        img_data = self.create_data_deeplo(dataset, indices, velo_timespamps)
+        imu_data = self.create_imu_data(dataset, indices, velo_timespamps)
+        img_data = self.create_lidar_data(dataset, indices, velo_timespamps)
         data = {**imu_data, **img_data}
         return data
 
@@ -394,9 +401,9 @@ class Kitti(data.Dataset):
         velo_timespamps = [dataset.timestamps_velo[idx] for idx in indices]
 
         if self.arch_type == 'deepio':
-            arch_data = self.create_data_deepio(dataset, indices, velo_timespamps)
+            arch_data = self.create_imu_data(dataset, indices, velo_timespamps)
         elif self.arch_type == 'deeplo':
-            arch_data = self.create_data_deeplo(dataset, indices, velo_timespamps)
+            arch_data = self.create_lidar_data(dataset, indices, velo_timespamps)
         elif self.arch_type == 'deeplio':
             arch_data = self.create_data_deeplio(dataset, indices, velo_timespamps)
         else:
@@ -420,7 +427,7 @@ class Kitti(data.Dataset):
         # printing dataset informations
         rep = "Kitti-Dataset" \
               "Type: {}, Length: {}, Seq.length: {}\n" \
-              "Date\tDrive\tlength\tstart-end\n".format(self.ds_type, self.length, self.seq_size)
+              "Date\tDrive\tlength\tstart-end\n".format(self.ds_type, self.length, self.internal_seq_size)
         seqs = ""
         for i in range(len(self.length_each_drive)):
             date = self.datasets[i].date

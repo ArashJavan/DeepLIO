@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+from ..misc import get_config_container
 
 class BaseNet(nn.Module):
     """
@@ -9,9 +10,10 @@ class BaseNet(nn.Module):
     def __init__(self):
         super(BaseNet, self).__init__()
         self.pretrained = False
+        self.output_shape = None
 
     def get_output_shape(self):
-        raise NotImplementedError()
+        return self.output_shape
 
     @property
     def name(self):
@@ -27,19 +29,8 @@ class BaseNet(nn.Module):
         return next(iter(devices))
 
 
-class BaseDeepLIO(BaseNet):
-    """
-    Base network for just main modules, e.g. deepio, deeplo and deeplios
-    """
-    def get_feat_networks(self):
-        raise NotImplementedError()
-
-    def initialize(self):
-        raise NotImplementedError()
-
-
-def num_flat_features(x):
-    size = x.size()[1:]  # all dimensions except the batch dimension
+def num_flat_features(x, dim=1):
+    size = x.size()[dim:]  # all dimensions except the dim (e.g. dim=1 batch, dim=2 seq. )
     num_features = 1
     for s in size:
         num_features *= s

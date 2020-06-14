@@ -1,6 +1,6 @@
 import copy
-import numpy as np
 
+import numpy as np
 import open3d as o3d
 
 from deeplio.datasets.kitti import KittiRawData

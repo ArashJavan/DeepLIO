@@ -4,14 +4,13 @@
  - and some other useful functions
 """
 
-import numpy as np
+from collections import namedtuple
+
 import matplotlib
 import matplotlib.cm
+import numpy as np
 import open3d as o3d
-
-from collections import namedtuple
 from PIL import Image
-
 
 # Per dataformat.txt
 OxtsPacket = namedtuple('OxtsPacket',

@@ -2,9 +2,6 @@ import math
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-import open3d as o3d
 
 from deeplio.common.spatial import normalize_quaternion, quaternion_to_rotation_matrix, \
     convert_points_to_homogeneous, convert_points_from_homogeneous

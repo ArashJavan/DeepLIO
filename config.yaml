@@ -1,23 +1,22 @@
 datasets:
-  sequence-size: 2 # must be >= 2
+  sequence-size: 2 # must be >= 1
   combinations: [[0, 2], [1, 2]]
   kitti:
     root-path-sync: "datasets/KITTI/sync"
     root-path-unsync: "datasets/KITTI/extract"
-    image-width: 1800
+    image-width: 720 # 1800
     image-height: 64
-    crop-factors: [0, 4] # top, left
+    crop-factors: [0, 16] # [0, 4] # top, left
     fov-up: 3.
     fov-down: -25.
     max-depth: 80.
     min-depth: 1.
     inverse-depth: true
     train:
-      #2011-10-03: [27, 42, 34]
-      2011-09-30: [16] # [16, 18, 20, 27, 28]
+      2011-10-03: [27, 42, 34]
+      2011-09-30: [16, 18, 20, 27, 28]
     test:
-      # 2011-09-30: [33, 34]
-      2011-10-03: [27]
+      2011-09-30: [33, 34]
     validation:
       2011-09-26: [23, 39]
 
@@ -30,89 +29,104 @@ datasets:
     #mean: [-0.0581, 0.4165, -0.8585, 8.2594, 0.2164]
     #std: [10.0366, 7.4936, 0.8761, 9.5056, 0.1740]
 
-### DNN Models
+### DeepLIO Networks ##############################
 
 # Lidar and IMU (DeepLIO) Neuronal Network
 deeplio:
-  name: "deeplio1" # [deeplioS0, deeplioS1, DeepLIO0, DeepLIO1]
-  dropout: 0.25
-  fusion: "cat"
-  odom-feat-net: "rnn"
-  rnn:
-    type: "lstm"
-    hidden-size: 512
-    num-layers: 2
-    bidirectional: false
-  fc:
-    size: [512]
-
-### DeepLO Configurations ###########################
-deeplo:
-  #name: "deeplo" # [deeplioS0, deeplioS1, DeepLIO0, DeepLIO1]
   dropout: 0.25
   pretrained: false
   model-path: ""
-  feature-net:
-    name: "deeplo-feat-pointseg" # [simple0, simple1]
+  lidar-feat-net:
+    name: "lidar-feat-simple-1" # [simple0, simple1, pointseg]
+    pretrained: false
+    model-path: ""
+  imu-feat-net:
+    name: "imu-feat-rnn"
     pretrained: false
     model-path: ""
   odom-feat-net:
-    name: "deeplo-odom-feat-fc" # [simple0, simple1]
+    name: "odom-feat-rnn" # [fc, rnn]
+    pretrained: false
+    model-path: ""
+  fusion-net: "fusion-layer"
+
+# Lidar Neuronal Network
+deeplo:
+  dropout: 0.25
+  pretrained: false
+  model-path: ""
+  lidar-feat-net:
+    name: "lidar-feat-simple-1" # [simple0, simple1, pointseg]
+    pretrained: false
+    model-path: ""
+  odom-feat-net:
+    name: "odom-feat-rnn" # [fc, rnn]
     pretrained: false
     model-path: ""
 
-# odometry feature network with rnn-layers
-deeplo-odom-feat-rnn:
-  type: "lstm"
-  hidden-size: 512
-  num-layers: 2
-  bidirectional: false
+# IMU Neuronal Network
+deepio:
+  dropout: 0.
+  pretrained: false
+  model-path: ""
+  imu-feat-net:
+    name: "imu-feat-rnn"  # [fc, rnn]
+    pretrained: true
+    model-path: "outputs/train_deepio_20200614_153226/cpkt_imufeatrnn0.tar"
 
-# odometry feature network with fully connected layers
-deeplo-odom-feat-fc:
-  size: [512]
-  fusion: cat # [cat, sub]
-
+### Lidar Feature Netowrks ###########################
 # feature network simple0 with conv layers
-deeplo-feat-simple-0:
+lidar-feat-simple-0:
   dropout: 0.
   fusion: cat # [cat, sub]
 
 # feature network simple0 with bypassed conv layers
-deeplo-feat-simple-1:
+lidar-feat-simple-1:
   dropout: 0.
   fusion: cat # [cat, sub]
   bypass: true
 
 # feature network pointseg
-deeplo-feat-pointseg:  # pointseg feature
+lidar-feat-pointseg:  # pointseg feature
   dropout: 0.
   classes: ['unknown', 'object']
   bypass: true
   fusion: cat # [cat, sub]
   part: "encoder" # [encoder, encoder+decoder]
 
-### DeepIO Configurations ###########################
-deepio:
-  dropout: 0.25
-  pretrained: false
-  model-path: "outputs/train_deepio_20200612_104605/cpkt_DeepIO_DeepIOFeat1.tar"
-  feature-net:
-    name: "deepio1"
-    pretrained: true
-    model-path: "outputs/train_deepio_20200612_104605/cpkt_DeepIOFeat1.tar"
+### Odometry Feature Netowrks ###########################
+# odometry feature network with fully connected layers
+odom-feat-fc:
+  size: [512]
+  fusion: cat # [cat, sub]
+  dropout: 0.
 
+# odometry feature network with rnn-layers
+odom-feat-rnn:
+  type: "lstm"
+  hidden-size: 512
+  num-layers: 2
+  bidirectional: false
+  dropout: 0.
+
+### IMU Feature Netowrks ###########################
 # IMU Feature Netowrks
-deepio0:  # FC
+imu-feat-fc:  # FC
   input-size: 6  # !fixed! do not chanage
   hidden-size: [256, 256]
+  dropout: 0.
 
-deepio1: # RNN
+imu-feat-rnn: # RNN
   type: "lstm"
   input-size: 6  # !fixed! do not chanage
   hidden-size: 256
   num-layers: 2
   bidirectional: true
+  dropout: 0.
+
+### Fusion-Layer for DeepLIO Net ###########################
+fusion-layer:
+  type: "cat" # [cat, soft-fusion]
 
 ### Loss Configurations ###########################
 losses:
@@ -128,7 +142,7 @@ losses:
   geoloss:
     params:
 
-arch: "deeplo"  # [deepio, deeplo, deeplio]
+arch: "deepio"  # [deepio, deeplo, deeplio]
 current-dataset: 'kitti'
 channels: [3, 4] # channesl: x=0, y=1, z=2, range(x,y,z)=3, remissions=4
 optimizer: 'adam'

@@ -1,7 +1,8 @@
-import os
-import sys
-import signal
 import argparse
+import os
+import signal
+import sys
+
 import yaml
 
 dname = os.path.abspath(os.path.dirname(__file__))
@@ -9,7 +10,7 @@ content_dir = os.path.abspath("{}/..".format(dname))
 sys.path.append(dname)
 sys.path.append(content_dir)
 
-from deeplio.models.tester import TesterDeepIO, TesterDeepLO
+from deeplio.models.tester import TesterDeepIO, TesterDeepLO, TesterDeepLIO
 
 
 def signal_handler(signum, frame):
@@ -33,8 +34,6 @@ if __name__ == '__main__':
                              'using Data Parallel or Distributed Data Parallel')
     parser.add_argument('-p', '--print-freq', default=10, type=int,
                         metavar='N', help='print frequency (default: 10)')
-    parser.add_argument('--model', default='', type=str, metavar='PATH',
-                        help='path to model checkpoint')
     parser.add_argument('-c', '--config', default="./config.yaml", help='Path to configuration file')
     parser.add_argument('-d', '--debug', default=False, help='debug logging', action='store_true', dest='debug')
     parser.add_argument('--plot', default=False, help='plot the results', action='store_true', dest='plot')
@@ -55,6 +54,8 @@ if __name__ == '__main__':
         tester = TesterDeepIO(args, cfg)
     elif arch == 'deeplo':
         tester = TesterDeepLO(args, cfg)
+    elif arch == 'deeplio':
+        tester = TesterDeepLIO(args, cfg)
 
     tester.run()
 

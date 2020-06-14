@@ -1,13 +1,12 @@
+import argparse
+import glob
+import multiprocessing
 import os
 import sys
 import time
-import argparse
-import glob
-import threading
-import multiprocessing
 
-import tqdm
 import numpy as np
+import tqdm
 
 dname = os.path.dirname(__file__)
 module_dir = os.path.abspath("{}/deeplio".format(dname))

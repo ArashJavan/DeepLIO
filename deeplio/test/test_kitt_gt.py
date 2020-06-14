@@ -1,12 +1,8 @@
+import argparse
 import os
 import sys
-import yaml
-import argparse
-import multiprocessing
 
-from torchvision import transforms
 from torch.utils import tensorboard
-
 
 dname = os.path.abspath(os.path.dirname(__file__))
 content_dir = os.path.abspath("{}/..".format(dname))

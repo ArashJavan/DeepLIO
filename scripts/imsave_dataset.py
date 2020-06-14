@@ -1,15 +1,13 @@
+import argparse
 import os
 import sys
-import yaml
-import argparse
 
+import matplotlib
+import yaml
 from tqdm import tqdm
 
-import numpy as np
-import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
-from matplotlib import cm
 
 dname = os.path.dirname(os.path.realpath(__file__))
 module_dir = os.path.abspath("{}/../deeplio".format(dname))
@@ -26,8 +24,8 @@ from pathlib import Path
 import torch.utils.data
 import torch.nn.functional as F
 
-from deeplio.common.logger import PyLogger, get_app_logger
-from deeplio.datasets import Kitti, deeplio_collate, KittiRawData
+from deeplio.common.logger import get_app_logger
+from deeplio.datasets import Kitti, deeplio_collate
 
 
 def main(args):

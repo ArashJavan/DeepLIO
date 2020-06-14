@@ -1,8 +1,6 @@
-import os
 import argparse
 import datetime as dt
-import time
-import sys
+
 
 def count_lines(path):
     with open(path, 'r') as f:

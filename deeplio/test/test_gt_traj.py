@@ -1,24 +1,16 @@
-import os
-import sys
-import signal
 import argparse
-
 import os
-import yaml
-import datetime
+import signal
+import sys
 import time
-import shutil
 from pathlib import Path
 
 import numpy as np
-import matplotlib
-#matplotlib.use('Agg')
-from matplotlib import pyplot as plt
-
 import torch
-import torch.nn.functional as F
 import torch.utils.data
-from torchvision import transforms
+import yaml
+# matplotlib.use('Agg')
+from matplotlib import pyplot as plt
 
 dname = os.path.abspath(os.path.dirname(__file__))
 content_dir = os.path.abspath("{}/..".format(dname))
@@ -27,10 +19,9 @@ sys.path.append(content_dir)
 
 
 from deeplio import datasets as ds
-from deeplio.common import spatial, utils
+from deeplio.common import spatial
 from deeplio.models.misc import DataCombiCreater
 from deeplio.models.worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
-from deeplio.models.transforms import ToTensor, Normalize, CenterCrop
 
 
 class TestTraj(Worker):

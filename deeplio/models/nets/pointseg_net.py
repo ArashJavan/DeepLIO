@@ -1,15 +1,7 @@
-import os
-import datetime
-import copy
-from pathlib import Path
-import numpy as np
-import matplotlib.pyplot as plt
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from .modules import Fire, FireDeconv, SELayer, ASPP
+from .pointseg_modules import Fire, FireDeconv, SELayer, ASPP
 
 
 class PSEncoder(nn.Module):
@@ -18,7 +10,6 @@ class PSEncoder(nn.Module):
         bn_d = bn_d
         self.bypass = cfg['bypass']
         self.input_shape = input_shape
-
         c, h, w = self.input_shape
 
         ### Ecnoder part
@@ -52,7 +43,7 @@ class PSEncoder(nn.Module):
 
         self.aspp = ASPP(512, [6, 9, 12])
 
-        self.output_shape = self.calc_output_shape()
+        self.output_shapes = self.calc_output_shape()
 
     def forward(self, x):
         x_1a = self.conv1a(x)  # (H, W/2)
@@ -96,11 +87,11 @@ class PSEncoder(nn.Module):
         input = torch.rand((1, c, h, w))
         self.eval()
         with torch.no_grad():
-            _, _, _, _, x_se3, _ = self.forward(input)
-        return x_se3.shape[1:]
+            x_1a, x_1b, x_se1, x_se2, x_se3, x_el = self.forward(input)
+        return x_1a.shape, x_1b.shape, x_se1.shape, x_se2.shape, x_se3.shape, x_el.shape
 
     def get_output_shape(self):
-        return self.output_shape
+        return self.output_shapes
 
 
 class PSDecoder(nn.Module):
@@ -108,9 +99,8 @@ class PSDecoder(nn.Module):
         super(PSDecoder, self).__init__()
         bn_d = 0.1
         num_classes = len(cfg['classes'])
-        self.input_shape = input_shape
+        self.input_shapes = input_shape
         self.p = cfg['dropout']
-
 
         self.fdeconv_el = FireDeconv(128, 32, 128, 128, bn=True, bn_d=bn_d)
 
@@ -122,7 +112,7 @@ class PSDecoder(nn.Module):
         self.drop = nn.Dropout2d(p=self.p)
         self.conv2 = nn.Sequential(nn.Conv2d(64, num_classes, kernel_size=3, stride=1, padding=1))
 
-        self.ouput_shape = self.calc_output_shape()
+        self.output_shape = self.calc_output_shape()
 
     def forward(self, x):
         x_1a, x_1b, x_se1, x_se2, x_se3, x_el = x
@@ -147,8 +137,7 @@ class PSDecoder(nn.Module):
         return x
 
     def calc_output_shape(self):
-        h, w, c = self.input_shape
-        input = torch.rand((2, 2, c, h, w))
+        input = [torch.rand(in_shape) for in_shape in self.input_shapes]
         self.eval()
         with torch.no_grad():
             out = self.forward(input)
@@ -157,83 +146,5 @@ class PSDecoder(nn.Module):
     def get_output_shape(self):
         return self.output_shape
 
-
-class PointSegNet(nn.Module):
-    def __init__(self, cfg):
-        super(PointSegNet, self).__init__()
-
-        ### Ecnoder part
-        self.feat_encoder = PSEncoder(cfg)
-
-        ### Decoder part
-        self.feat_decoder = PSDecoder(cfg)
-
-    def forward(self, x):
-        x = self.feat_encoder(x)
-        x = self.feat_decoder(x)
-        return x
-
-    @property
-    def name(self):
-        return self.__class__.__name__.lower()
-
-
-feat_names = [
-    "x_in",
-    "x_1b",
-    "x_1a",
-    "x_f23",
-    "x_f45",
-    "x_f6789",
-    "x_el",
-    "x_fd1",
-    "x_fd1_fused",
-    "x_fd2",
-    "x_fd3",
-    "x_fd4",
-    "x_d",
-    "x"]
-
-index = 0
-dname = os.path.abspath(os.path.dirname(__file__))
-content_dir = os.path.abspath("{}/..".format(dname))
-plt.ioff()
-def plot_module(feats):
-    global index
-
-    index += 1
-    if index % 20 != 0:
-        return
-
-    img_path = Path("{}/images".format(content_dir))
-    img_path.mkdir(parents=True, exist_ok=True)
-
-    # output
-    x_lst = np.argmax(feats[-1], axis=0)
-    x8c = np.zeros((x_lst.shape[0], x_lst.shape[1], 3))
-    colors = [[0., 0., 0.],
-              [0.9, 0., 0.],
-              [0., 0.9, 0.],
-              [0., 0., 0.9]]
-    for j in range(4):
-        x8c[x_lst == j, :] = colors[j]
-
-    fig, ax = plt.subplots(2, 7, figsize=(20, 10))
-    axes = ax.flatten()
-    for i in range(len(feats)):
-        x = feats[i]
-        min_ = x.min()
-        max_ = x.max()
-        if i < (len(feats) - 1):
-            x = (x - min_) / (max_ - min_ + 1e-6)
-            axes[i].imshow(x)
-            axes[i].set_title("{}, {:.5f}-{:.5f}".format(feat_names[i], min_, max_))
-        else:
-            axes[i].imshow(x8c)
-            axes[i].set_title("{}, {:.5f}-{:.5f}".format(feat_names[i], min_, max_))
-
-    im_path = "{}/{}_{}.png".format(str(img_path), index, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
-    fig.savefig(im_path, bbox_inches='tight')
-    plt.close(fig)
 
 

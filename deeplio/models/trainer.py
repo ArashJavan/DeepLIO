@@ -1,27 +1,23 @@
 import os
-import yaml
-import datetime
-import time
 import shutil
+import time
 from pathlib import Path
 
 import numpy as np
-
 import torch
 import torch.utils.data
-from torchvision import transforms
+import yaml
+from pytorch_model_summary import summary
 from torch import optim
 from torchvision.utils import make_grid
 
-from pytorch_model_summary import summary
-
 from deeplio import datasets as ds
-from deeplio.losses import get_loss_function
 from deeplio.common import spatial, utils
+from deeplio.losses import get_loss_function
 from deeplio.models import nets
 from deeplio.models.misc import DataCombiCreater
-from .worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
 from .optimizer import create_optimizer
+from .worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
 
 
 class Trainer(Worker):
@@ -58,7 +54,7 @@ class Trainer(Worker):
         self.val_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='validation')
         self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size,
                                                           num_workers=self.num_workers,
-                                                          shuffle=False,
+                                                          shuffle=True,
                                                           worker_init_fn=worker_init_fn,
                                                           collate_fn = ds.deeplio_collate)
 
@@ -247,7 +243,6 @@ class Trainer(Worker):
                 self.tensor_writer.add_scalar("Train/Gradnorm", calc_grad_norm(self.model.parameters()), self.step_val)
                 self.tensor_writer.flush()
             self.data_last = data
-            break
 
         self.post_train_iter()
 
@@ -293,16 +288,15 @@ class Trainer(Worker):
                 if not self.is_running:
                     return 0
 
-                    # prepare data
-                imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus, gts_local, gts_global = self.data_permuter(data)
+                # prepare data
+                imgs, imus, gts_local = self.data_permuter(data)
 
                 # prepare ground truth tranlational and rotational part
                 gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
                 gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
 
                 # compute model predictions and loss
-                pred_x, pred_q, loss = self.eval_model_and_loss(imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
-                                                                gts_local, gt_local_x, gt_local_q, gts_global)
+                pred_x, pred_q, loss = self.eval_model_and_loss(imgs, imus, gt_local_x, gt_local_q)
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), len(pred_x))
@@ -338,9 +332,9 @@ class TrainerDeepIO(Trainer):
         # log the network structure and number of params
         # log the network structure and number of params
         self.logger.info("{}: Network architecture:".format(self.model.name))
-        imu = torch.rand((1, 2, 2, 6)).to(self.device)
+        imu_data = torch.rand((1, self.seq_size, 2, 6)).to(self.device)
         self.model.eval()
-        self.logger.print(summary(self.model, imu))
+        self.logger.print(summary(self.model, imu_data))
 
     def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
         # compute model predictions and loss
@@ -362,13 +356,51 @@ class TrainerDeepLO(Trainer):
         # log the network structure and number of params
         # log the network structure and number of params
         self.logger.info("{}: Network architecture:".format(self.model.name))
-        data = torch.randn((2, self.seq_size+1, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
+        data = torch.randn((1, self.seq_size+1, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
         self.model.eval()
         self.logger.print(summary(self.model, data))
 
     def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
         # compute model predictions and loss
         pred_x, pred_q = self.model(imgs)
+        loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+        return pred_x, pred_q, loss
+
+    def post_train_iter(self):
+        # save infos to -e.g. gradient hists and images to tensorbaord and the end of training
+        b, s, c, h, w = np.asarray(self.data_last['images'].shape)
+        imgs = self.data_last['images'].reshape(b*s, c, h, w)
+        imgs_remossion = imgs[:, 1, :, :]
+        imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
+        imgs_remossion = torch.stack(imgs_remossion)
+        imgs_remossion = make_grid(imgs_remossion, nrow=2)
+        self.tensor_writer.add_image("Images/Remissions", imgs_remossion, global_step=self.step_val)
+
+        imgs_range = imgs[:, 0, :, :]
+        imgs_range = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_range]
+        imgs_range = torch.stack(imgs_range)
+        imgs_range = make_grid(imgs_range, nrow=2)
+        self.tensor_writer.add_image("Images/Range", imgs_range, global_step=self.step_val)
+
+    def post_valiate(self):
+        pass
+
+
+class TrainerDeepLIO(Trainer):
+    ACTION = "train_deeplio"
+
+    def post_init(self):
+        # log the network structure and number of params
+        # log the network structure and number of params
+        self.logger.info("{}: Network architecture:".format(self.model.name))
+        lidar_data = torch.randn((1, self.seq_size+1, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
+        imu_data = torch.rand((1, self.seq_size, 2, 6)).to(self.device)
+        self.model.eval()
+        self.logger.print(summary(self.model, [lidar_data, imu_data]))
+
+    def eval_model_and_loss(self, imgs, imus, gt_local_x, gt_local_q):
+        # compute model predictions and loss
+        pred_x, pred_q = self.model([imgs, imus])
         loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
         return pred_x, pred_q, loss
 

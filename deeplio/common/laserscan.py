@@ -4,9 +4,10 @@ https://github.com/PRBonn/lidar-bonnetal
 """
 
 import numpy as np
+import open3d as o3d
+
 from deeplio.common import utils
 
-import open3d as o3d
 
 class LaserScan:
     """Class that contains LaserScan with x,y,z,r"""

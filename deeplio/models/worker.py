@@ -1,16 +1,14 @@
-import os
 import datetime
-import time
 import logging
+import os
 import random
+import time
 from pathlib import Path
 
 import numpy as np
-
 import torch
-from torch.backends import cudnn
-
 from tensorboardX import SummaryWriter
+from torch.backends import cudnn
 
 from deeplio.common import *
 from .misc import build_config_container
@@ -59,8 +57,6 @@ class Worker:
         self.im_width_model = self.im_width - (2 * crop_width)
 
         self.n_channels = len(self.cfg['channels'])
-
-
 
         # create output folder structure
         self.out_dir = "{}/outputs/{}_{}".format(self.content_dir, self.ACTION, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))

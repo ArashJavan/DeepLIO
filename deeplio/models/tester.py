@@ -1,23 +1,21 @@
-import os
-import yaml
-import datetime
 import time
-import shutil
+
+import yaml
 from pathlib import Path
 
-import numpy as np
 import matplotlib
+import numpy as np
+import yaml
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import torch
 import torch.utils.data
-from torchvision import transforms
 from torch.utils import tensorboard
 
 from deeplio import datasets as ds
-from deeplio.losses.losses import LWSLoss, HWSLoss
-from deeplio.common import spatial, utils
+from deeplio.common import spatial
 from deeplio.models import nets
 from deeplio.models.misc import DataCombiCreater
 from deeplio.models.worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
@@ -37,6 +35,10 @@ class Tester(Worker):
             self.logger.info("setting batch size (batch-size = 1).")
             self.batch_size = 1
 
+        if self.seq_size != 1:
+            self.logger.info("setting sequence size (s=1)")
+            raise ValueError("Sequence size mus tbe equal 1 in test mode.")
+
         # create the folder for saving training checkpoints
         self.checkpoint_dir = self.out_dir
         Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
@@ -46,20 +48,16 @@ class Tester(Worker):
 
         self.test_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='test')
 
-        if self.seq_size != 2:
-            self.logger.info("setting sequence size (s=2)")
-            self.test_dataset.seq_size = 2
-
         self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
                                                            num_workers=self.num_workers,
                                                            shuffle=False,
                                                            worker_init_fn = worker_init_fn,
                                                            collate_fn = ds.deeplio_collate)
 
-        self.post_processor = DataCombiCreater(device=self.device)
+        self.data_permuter = DataCombiCreater(combinations=self.combinations,
+                                              device=self.device)
         self.model = nets.get_model(input_shape=(self.n_channels, self.im_height_model, self.im_width_model),
-                                    cfg=self.cfg, sequence_size=self.seq_size,
-                                    combinations=self.combinations,device=self.device)
+                                    cfg=self.cfg, device=self.device)
         self.criterion = get_loss_function(self.cfg, args.device)
 
         self.tensor_writer = tensorboard.SummaryWriter(log_dir=self.runs_dir)
@@ -82,7 +80,6 @@ class Tester(Worker):
 
     def test(self):
         writer = self.tensor_writer
-        criterion = self.criterion
         model = self.model
 
         batch_time = AverageMeter('Time', ':6.3f')
@@ -109,16 +106,15 @@ class Tester(Worker):
                 if not self.is_running:
                     return 0
 
-                    # prepare data
-                imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus, gts_local, gts_global = self.post_processor(data)
+                # prepare data
+                imgs, imus, gts_local = self.data_permuter(data)
 
                 # prepare ground truth tranlational and rotational part
                 gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
                 gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
 
                 # compute model predictions and loss
-                pred_x, pred_q, loss = self.eval_model_and_loss(imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
-                                                                gts_local, gt_local_x, gt_local_q, gts_global)
+                pred_x, pred_q, loss = self.eval_model_and_loss(imgs, imus, gt_local_x, gt_local_q)
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), len(pred_x))
@@ -133,7 +129,7 @@ class Tester(Worker):
                 idx = meta['index'][0]
                 velo_ts = meta['velo-timestamps']
 
-                gt_global = gts_global[0].cpu().numpy()
+                gt_global = data['gts'][0].cpu().numpy() # gts_global[0].cpu().numpy()
                 seq_name = "{}_{}".format(date, drive)
                 if seq_name not in seq_names:
                     if last_seq is not None:
@@ -188,8 +184,7 @@ class Tester(Worker):
         if curr_seq is not None:
             curr_seq.write_to_file()
 
-    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
-                            gts_local, gt_local_x, gt_local_q, gts_global):
+    def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
         pred_x = None
         pred_q = None
         loss = None
@@ -199,8 +194,7 @@ class Tester(Worker):
 class TesterDeepIO(Tester):
     ACTION = "test_deepio"
 
-    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
-                            gts_local, gt_local_x, gt_local_q, gts_global):
+    def eval_model_and_loss(self, imgs, imus, gt_local_x, gt_local_q):
         # compute model predictions and loss
         pred_x, pred_q = self.model(imus)
 
@@ -219,10 +213,28 @@ class TesterDeepIO(Tester):
 class TesterDeepLO(Tester):
     ACTION = "test_deeplo"
 
-    def eval_model_and_loss(self, imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus,
-                            gts_local, gt_local_x, gt_local_q, gts_global):
+    def eval_model_and_loss(self, imgs, imus, gt_local_x, gt_local_q):
         # compute model predictions and loss
-        pred_x, pred_q = self.model([imgs_0, imgs_1])
+        pred_x, pred_q = self.model(imgs)
+
+        # rotation
+        if self.args.param == 'xq':
+            loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+        elif self.args.param == 'x':
+            loss = self.criterion(pred_x, gt_local_q, gt_local_x, gt_local_q)
+        elif self.args.param == 'q':
+            loss = self.criterion(gt_local_x, pred_q, gt_local_x, gt_local_q)
+        else:
+            loss = self.criterion(gt_local_x, gt_local_q, gt_local_x, gt_local_q)
+        return pred_x, pred_q, loss
+
+
+class TesterDeepLIO(Tester):
+    ACTION = "test_deeplio"
+
+    def eval_model_and_loss(self, imgs, imus, gt_local_x, gt_local_q):
+        # compute model predictions and loss
+        pred_x, pred_q = self.model([imgs, imus])
 
         # rotation
         if self.args.param == 'xq':

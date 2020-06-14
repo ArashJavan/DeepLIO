@@ -1,10 +1,7 @@
-import random
+import numpy as np
 import torch
 
 from deeplio.common.spatial import inv_SE3, rotation_matrix_to_quaternion
-
-import math
-import numpy as np
 
 
 class DataCombiCreater(object):
@@ -22,6 +19,7 @@ class DataCombiCreater(object):
 
         if has_imgs:
             n_batches = len(data['images'])
+            res_imgs = data['images'].to(self.device)
         else:
             n_batches = len(data['imus'])
 
@@ -37,9 +35,6 @@ class DataCombiCreater(object):
                 res_imu.append(res)
                 #res_imu = [torch.stack(imu).to(self.device, non_blocking=True) for imu_seq in res_imu for imu in imu_seq]
 
-        if has_imgs:
-            res_imgs = data['images'].to(self.device)
-
         res_gt_local = torch.stack(res_gt_local).to(self.device, non_blocking=True)
         return res_imgs, res_imu, res_gt_local
 
@@ -54,14 +49,6 @@ class DataCombiCreater(object):
                 imu_tmp.extend(imus[k])
             imu_seq.append(torch.stack(imu_tmp).to(self.device))
         return imu_seq
-
-    def process_images(self, images):
-        imgs = []
-        for combi in self.combinations:
-            im_t = images[combi[1]]
-            imt_tn1 = images[combi[0]]
-            imgs.append(torch.cat((imt_tn1, im_t), dim=0))
-        return torch.stack(imgs)
 
     def process_ground_turth(self, gts):
         T_global = []
@@ -119,7 +106,7 @@ def get_config_container():
 
 
 def build_config_container(cfg, args):
-    global  config_container
+    global config_container
     config_container = ConfigContainer(cfg, args)
     return config_container
 

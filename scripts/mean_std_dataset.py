@@ -1,9 +1,10 @@
 import os
-import yaml
-import argparse
-from multiprocessing import Pool, Lock
 import sys
-import os
+import argparse
+from multiprocessing import Pool
+
+import yaml
+
 dname = os.path.dirname(__file__)
 module_dir = os.path.abspath("{}/deeplio".format(dname))
 content_dir = os.path.abspath("{}/..".format(dname))
@@ -15,7 +16,6 @@ import tqdm
 
 import numpy as np
 
-import matplotlib
 import matplotlib.pyplot as plt
 
 from deeplio.datasets import KittiRawData
