@@ -4,9 +4,9 @@ datasets:
   kitti:
     root-path-sync: "datasets/KITTI/sync"
     root-path-unsync: "datasets/KITTI/extract"
-    image-width: 720 # 1800
+    image-width: 1080
     image-height: 64
-    crop-factors: [0, 16] # [0, 4] # top, left
+    crop-factors: [4, 24] # [0, 4] # top, left
     fov-up: 3.
     fov-down: -25.
     max-depth: 80.
@@ -142,7 +142,7 @@ losses:
   geoloss:
     params:
 
-arch: "deepio"  # [deepio, deeplo, deeplio]
+arch: "deeplio"  # [deepio, deeplo, deeplio]
 current-dataset: 'kitti'
 channels: [3, 4] # channesl: x=0, y=1, z=2, range(x,y,z)=3, remissions=4
 optimizer: 'adam'
