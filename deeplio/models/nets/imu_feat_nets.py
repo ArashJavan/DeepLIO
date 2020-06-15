@@ -35,17 +35,18 @@ class ImuFeatFC(BaseImuFeatNet):
         self.output_shape = [1, self.seq_size, self.hidden_size[-1]]
 
     def forward(self, x):
-        n_batches = len(x)
+        batch_size = len(x)
         n_seq = len(x[0]) # all seq. are the same length
 
         outputs = []
-        for b in range(n_batches):
+        for b in range(batch_size):
             for s in range(n_seq):
                 y = x[b][s]
                 for m in self.net:
                     y = F.relu(m(y))
                 outputs.append(torch.sum(y, dim=0))
         outputs = torch.stack(outputs)
+        outputs = outputs.view(batch_size, self.seq_size, -1)
         return outputs
 
 
@@ -81,32 +82,34 @@ class ImufeatRNN0(BaseImuFeatNet):
         return out
 
 
-class ImuFeatRnn1(nn.Module):
+class ImuFeatRnn1(BaseImuFeatNet):
     def __init__(self, cfg):
-        super(ImuFeatRnn1, self).__init__()
+        super(ImuFeatRnn1, self).__init__(cfg)
         rnn_type = cfg['type'].lower()
         self.hidden_size = cfg.get('hidden-size', 6)
         self.bidirectional = cfg.get('bidirectional', False)
 
         if rnn_type == 'gru':
-            self.rnn = nn.GRU(input_size=self.input_size, hidden_size=self.hidden_size[0],
+            self.rnn = nn.GRU(input_size=self.input_size, hidden_size=self.hidden_size,
                               num_layers=self.num_layers, bidirectional=self.bidirectional, dropout=self.p)
         else:
-            self.rnn = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size[0],
+            self.rnn = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size,
                                num_layers=self.num_layers, bidirectional=self.bidirectional, dropout=self.p)
 
         self.num_dir = 2 if self.bidirectional else 1
         self.output_shape = self.output_shape = [1, self.seq_size, self.hidden_size]
 
     def forward(self, x):
+        batch_size = len(x)
         x_all = [xx for x_ in x for xx in x_]
         outputs = []
         for xx in x_all:
             s, n = xx.shape
             out, hiden = self.rnn(xx.unsqueeze(1))
-            out = out.view(s, 1, self.num_dir, self.hidden_size[0])
+            out = out.view(s, 1, self.num_dir, self.hidden_size)
             out = out[-1, :, 0]
             outputs.append(out.squeeze())
         outputs = torch.stack(outputs)
+        outputs = outputs.view(batch_size, self.seq_size, -1)
         return outputs
 

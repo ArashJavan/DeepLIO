@@ -210,7 +210,7 @@ class Trainer(Worker):
             # zero the parameter gradients, compute gradient and optimizer step
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 20.)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.)
             optimizer.step()
 
             # measure elapsed time

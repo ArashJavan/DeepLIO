@@ -27,11 +27,11 @@ from deeplio.models.worker import Worker, AverageMeter, ProgressMeter, worker_in
 class TestTraj(Worker):
     ACTION = "test_traj"
 
-    def __init__(self, parser):
-        super(TestTraj, self).__init__(parser)
+    def __init__(self, args, cfg):
+        super(TestTraj, self).__init__(args, cfg)
         args = self.args
 
-        if self.seq_size != 2:
+        if self.seq_size > 1:
             self.logger.info("sequence size in the testing mode should be set to two.")
             #raise ValueError("sequence size in the testing mode should be set to two.")
 
@@ -54,12 +54,13 @@ class TestTraj(Worker):
                                                            worker_init_fn = worker_init_fn,
                                                            collate_fn = ds.deeplio_collate)
 
-        self.post_processor = DataCombiCreater(seq_size=self.seq_size, batch_size=self.batch_size, shuffle=False)
+        self.data_permuter = DataCombiCreater(combinations=self.combinations,
+                                              device=self.device)
 
         # debugging and visualizing
-        self.logger.print("DeepLIO TestTraj Configurations:")
-        self.logger.print("batch-size:{}, workers: {}".
-                          format(self.batch_size, self.num_workers))
+        self.logger.print("System Training Configurations:")
+        self.logger.print("args: {}".
+                          format(self.args))
 
         self.logger.print(yaml.dump(self.cfg))
         self.logger.print(self.test_dataset)
@@ -89,10 +90,10 @@ class TestTraj(Worker):
             if not self.is_running:
                 return 0
 
-            imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, gts_local, imus = self.post_processor(data)
-
-            x_local = gts_local[0, 0:3]
-            q_local = gts_local[0, 3:7]
+            imgs, imus, gts_local = self.data_permuter(data)
+            gts_local.squeeze_()  # remove empty dimensions
+            x_local = gts_local[0:3]
+            q_local = gts_local[3:7]
             R_local = spatial.quaternion_to_rotation_matrix(q_local)
             T_local = torch.eye(4)
             T_local[:3, 3] = x_local
@@ -313,10 +314,14 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='cpu', type=str, metavar='DEVICE',
                         help='Device to use [cpu, cuda].')
 
-
     signal.signal(signal.SIGINT, signal_handler)
 
-    tester = TestTraj(parser)
+    args = parser.parse_args()
+
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f)
+
+    tester = TestTraj(args, cfg)
     tester.run()
 
     print("Done!")

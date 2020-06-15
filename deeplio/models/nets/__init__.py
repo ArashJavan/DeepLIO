@@ -49,7 +49,7 @@ def create_deepio_arch(cfg, device):
     if imu_feat_name == 'imu-feat-fc':
         imu_feat_net = ImuFeatFC(cfg[imu_feat_name])
     elif imu_feat_name == 'imu-feat-rnn':
-        imu_feat_net = ImufeatRNN0(cfg[imu_feat_name])
+        imu_feat_net = ImuFeatRnn1(cfg[imu_feat_name])
     else:
         raise ValueError("Wrong feature network {}".format(imu_feat_name))
 

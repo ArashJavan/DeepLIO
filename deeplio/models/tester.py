@@ -161,10 +161,17 @@ class Tester(Worker):
                 T_local[:3, 3] = pred_x.numpy() #  gt_x.numpy()
                 #T_local[:3, 3] = gt_x.numpy()
 
-                # rotation
                 if self.args.param == 'xq':
+                    T_local[:3, 3] = pred_x.numpy()
+                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q).numpy()
+                elif self.args.param == 'x':
+                    T_local[:3, 3] = pred_x.numpy()
+                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
+                elif self.args.param == 'q':
+                    T_local[:3, 3] = gt_x.numpy()
                     T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q).numpy()
                 else:
+                    T_local[:3, 3] = gt_x.numpy()
                     T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
 
                 curr_seq.add_local_prediction(velo_ts[1], losses.avg, T_local, T_glob)

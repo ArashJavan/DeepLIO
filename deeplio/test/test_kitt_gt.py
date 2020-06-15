@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import yaml
 
 from torch.utils import tensorboard
 
@@ -40,8 +41,8 @@ def draw_registration_result(source, target, transformation):
 
 class TestKittiGt(Worker):
     ACTION="kitti-ds-tester"
-    def __init__(self, parser):
-        super(TestKittiGt, self).__init__(parser)
+    def __init__(self, args, cfg):
+        super(TestKittiGt, self).__init__(args, cfg)
         dataset = ds.Kitti(config=self.cfg, transform=None)
         self.train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size,
                                                             num_workers=self.num_workers,
@@ -49,7 +50,8 @@ class TestKittiGt(Worker):
                                                             worker_init_fn = worker_init_fn,
                                                             collate_fn = ds.deeplio_collate)
 
-        self.post_processor = DataCombiCreater(seq_size=self.seq_size, batch_size=self.batch_size)
+        self.data_permuter = DataCombiCreater(combinations=self.combinations,
+                                              device=self.device)
 
     def run(self):
         for idx, data in enumerate(self.train_dataloader):
@@ -57,18 +59,17 @@ class TestKittiGt(Worker):
             print("****** Fetching new Data {} ********".format(idx))
 
             # prepare data
-            imgs_0, imgs_1, imgs_untrans_0, imgs_untrans_1, imus, gts_local, gts_global = self.post_processor(data)
+            imgs, imus, gts_local = self.data_permuter(data)
 
             # prepare ground truth tranlational and rotational part
-            gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
-            gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
+            gt_local_x = gts_local[0, :, 0:3].view(-1, 3)
+            gt_local_q = gts_local[0, :, 3:7].view(-1, 4)
 
-            imgs_untrans_0 = imgs_untrans_0.numpy()
-            imgs_untrans_1 = imgs_untrans_1.numpy()
-
-            for i in range(len(imgs_0)):
-                im_trgt = imgs_untrans_0[i].transpose(1, 2, 0)
-                im_src = imgs_untrans_1[i].transpose(1, 2, 0)
+            for i, combi in enumerate(self.combinations):
+                idx_min = np.min(combi)
+                idx_max = np.max(combi)
+                im_trgt = data['untrans-images'][0][idx_min].numpy().transpose(1, 2, 0)
+                im_src = data['untrans-images'][0][idx_max].numpy().transpose(1, 2, 0)
                 T_gt = torch.eye(4)
                 T_gt[:3, 3] = gt_local_x[i]
                 T_gt[:3, :3] = quaternion_to_rotation_matrix(gt_local_q[i])
@@ -77,7 +78,7 @@ class TestKittiGt(Worker):
                 pcd_src = convert_velo_img_to_o3d(im_src)
                 pcd_trgt = convert_velo_img_to_o3d(im_trgt)
 
-                print("****** Starting New Itration {} - {} ********".format(i, self.post_processor.combinations[i]))
+                print("****** Starting New Itration {} - {} ********".format(i, self.data_permuter.combinations[i]))
                 print("Initial alignment")
                 T_init = np.identity(4)
                 evaluation = o3d.registration.evaluate_registration(pcd_src, pcd_trgt,
@@ -112,9 +113,13 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='cpu', type=str, metavar='DEVICE',
                         help='Device to use [cpu, cuda].')
 
-
     np.set_printoptions(precision=3, suppress=True)
-    kitti_gt_test = TestKittiGt(parser)
+    args = parser.parse_args()
+
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f)
+
+    kitti_gt_test = TestKittiGt(args, cfg)
     kitti_gt_test.run()
     print("Done!")
 
