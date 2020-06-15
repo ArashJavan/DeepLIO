@@ -210,6 +210,7 @@ class Trainer(Worker):
             # zero the parameter gradients, compute gradient and optimizer step
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 20.)
             optimizer.step()
 
             # measure elapsed time
@@ -312,7 +313,6 @@ class Trainer(Worker):
                     self.tensor_writer.add_scalar\
                         ("Val/Loss", losses.avg, step_val)
                     self.tensor_writer.flush()
-                break
 
         self.post_valiate()
         return losses.avg
