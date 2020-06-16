@@ -32,7 +32,7 @@ class OdomFeatFC(BaseNet):
         b, s, n = x.shape
         x = x.view(b*s, n)
         for i, layer in enumerate(self.layers):
-            x = F.relu(layer(x), inplace=True)
+            x = F.leaky_relu(layer(x), negative_slope=0.01, inplace=True)
         x = x.view(b, s, -1)
         return x
 

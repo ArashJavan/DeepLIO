@@ -51,17 +51,19 @@ class Trainer(Worker):
         self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.args.lr_decay, gamma=0.5)
         self.criterion = get_loss_function(self.cfg, args.device)
 
-        has_lidar = True if self.model.lidar_feat_net is not None else False
-        has_imu = True if self.model.imu_feat_net is not None else False
+        self.has_lidar = True if self.model.lidar_feat_net is not None else False
+        self.has_imu = True if self.model.imu_feat_net is not None else False
 
-        self.train_dataset = ds.Kitti(config=self.cfg, transform=transform, has_imu=has_imu, has_lidar=has_lidar)
+        self.train_dataset = ds.Kitti(config=self.cfg, transform=transform,
+                                      has_imu=self.has_imu, has_lidar=self.has_lidar)
         self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
                                                             num_workers=self.num_workers,
                                                             shuffle=True,
                                                             worker_init_fn=worker_init_fn,
                                                             collate_fn=ds.deeplio_collate)
 
-        self.val_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='validation')
+        self.val_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='validation',
+                                    has_imu=self.has_imu, has_lidar=self.has_lidar)
         self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size,
                                                           num_workers=self.num_workers,
                                                           shuffle=True,
@@ -213,7 +215,7 @@ class Trainer(Worker):
             # zero the parameter gradients, compute gradient and optimizer step
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
             optimizer.step()
 
             # measure elapsed time
@@ -347,20 +349,21 @@ class TrainerDeepLIO(Trainer):
         return pred_x, pred_q, loss
 
     def post_train_iter(self):
-        # save infos to -e.g. gradient hists and images to tensorbaord and the end of training
-        b, s, c, h, w = np.asarray(self.data_last['images'].shape)
-        imgs = self.data_last['images'].reshape(b*s, c, h, w)
-        imgs_remossion = imgs[:, 1, :, :]
-        imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
-        imgs_remossion = torch.stack(imgs_remossion)
-        imgs_remossion = make_grid(imgs_remossion, nrow=2)
-        self.tensor_writer.add_image("Images/Remissions", imgs_remossion, global_step=self.step_val)
+        if self.has_lidar:
+            # save infos to -e.g. gradient hists and images to tensorbaord and the end of training
+            b, s, c, h, w = np.asarray(self.data_last['images'].shape)
+            imgs = self.data_last['images'].reshape(b*s, c, h, w)
+            imgs_remossion = imgs[:, 1, :, :]
+            imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
+            imgs_remossion = torch.stack(imgs_remossion)
+            imgs_remossion = make_grid(imgs_remossion, nrow=2)
+            self.tensor_writer.add_image("Images/Remissions", imgs_remossion, global_step=self.step_val)
 
-        imgs_range = imgs[:, 0, :, :]
-        imgs_range = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_range]
-        imgs_range = torch.stack(imgs_range)
-        imgs_range = make_grid(imgs_range, nrow=2)
-        self.tensor_writer.add_image("Images/Range", imgs_range, global_step=self.step_val)
+            imgs_range = imgs[:, 0, :, :]
+            imgs_range = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_range]
+            imgs_range = torch.stack(imgs_range)
+            imgs_range = make_grid(imgs_range, nrow=2)
+            self.tensor_writer.add_image("Images/Range", imgs_range, global_step=self.step_val)
 
     def post_valiate(self):
         pass

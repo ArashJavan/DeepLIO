@@ -44,7 +44,7 @@ class ImuFeatFC(BaseImuFeatNet):
             for s in range(n_seq):
                 y = x[b][s]
                 for m in self.net:
-                    y = F.relu(m(y))
+                    y = F.leaky_relu(m(y), negative_slope=0.01, inplace=True)
                 outputs.append(torch.sum(y, dim=0))
         outputs = torch.stack(outputs)
         outputs = outputs.view(batch_size, self.seq_size, -1)
