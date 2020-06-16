@@ -1,7 +1,6 @@
 # DeepLIO
 __Deep Lidar Inertial Odometry__
 
-#### !!!This repo is under heavy development at the moment!!!
 
 1. Intorduction
 
@@ -219,7 +218,7 @@ deeplio:
 You can choose between different network implementations by just replacing the name of the desired network.  
 
 
-#### __1.4.1 DeepIO 
+#### __1.4.1 DeepIO__
 __Deep Inertial Odometry__
 You can configure the network in a way that it only uses IMU measurements for odometry prediction. You do it 
 just by commenting out '#' the name of all other modules, as below:
@@ -247,7 +246,7 @@ deeplio:
 
 Please also note that you can for example have IMU and Odometry module by just commenting Lidar-Module out!
 
-#### __1.4.2 DeepLO 
+#### __1.4.2 DeepLO__ 
 __Deep LiDAR Odometry__
 In the same way you can configure the network in a way that it only uses Lidar measurements for odometry prediction. You do it 
 just by commenting out '#' the name of all other modules, as below:
@@ -276,3 +275,22 @@ deeplio:
 Please also note that you can for example have LiDAR and Odometry module by just commenting IMU-Module out!
 As you can easily guess you will get the whole __DeepLIO__ netowrk by naming all the modules you want in the network.  
 
+
+### Data Normalization
+The inputs to the LiDAR-Feat-Nets are as mentioned before the projected frame, consisting of two remission and intensity channels.
+As you can imagine they do not have the same scale, for this reason they should be normalized before we pass them to the network.
+The same is true for IMU-measurments. Mean and standard deviation of each inputs to the netowrk 
+is  calculated by [Mean-Std-Script](https://github.com/ArashJavan/DeepLIO/blob/master/scripts/mean_std_dataset.py).
+For the KITTI dataset the values are already incorporated in the config-file.
+```yaml
+    # channesl: x, y, z, range(x,y,z), remissions)
+    mean-image: [-0.05815, 0.4165, -0.8585, 0.1029, 0.2164]
+    std-image: [10.0366, 7.4936, 0.8761, 0.0857, 0.1740]
+    mean-imu: [-0.0635, 0.186, 9.7966, 0., 0.0005, 0.0082]
+    std-imu: [0.8525, 0.9516, 0.3401, 0.0198, 0.02204, 0.1383]
+```
+
+__Note__: In this work we use in the computer vision community more popular inverse depth representation
+insted of depth values directly.
+
+<img src="resources/images/histogram_mean_and_std_inv_depth.png" alt="deeplio" width="500"/>
