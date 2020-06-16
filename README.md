@@ -16,7 +16,9 @@ cd DeepLIO
 ### __1.1 Dependencies__
 
 Following packages should be already installed, before you can start using deeplio.
-- pytorch 
+- pytorch (> v1.4)
+- tensorboard 
+- [pytorch-model-summary](https://pypi.org/project/pytorch-model-summary/)
 - tqdm (optional)
 - open3d (optinal)
 
@@ -276,7 +278,7 @@ Please also note that you can for example have LiDAR and Odometry module by just
 As you can easily guess you will get the whole __DeepLIO__ netowrk by naming all the modules you want in the network.  
 
 
-### Data Normalization
+### __1.5 Data Normalization__
 The inputs to the LiDAR-Feat-Nets are as mentioned before the projected frame, consisting of two remission and intensity channels.
 As you can imagine they do not have the same scale, for this reason they should be normalized before we pass them to the network.
 The same is true for IMU-measurments. Mean and standard deviation of each inputs to the netowrk 
@@ -294,3 +296,21 @@ __Note__: In this work we use in the computer vision community more popular inve
 insted of depth values directly.
 
 <img src="resources/images/histogram_mean_and_std_inv_depth.png" alt="deeplio" width="500"/>
+
+### __1.6 Training DeepLIO___
+You can train the network by first preparing the KITTI datset as explained before, then performing the required configurations
+in the config-file depending on your needs and at least starting the training by executing:
+
+```shell script
+python deeplio/train.py
+``` 
+or 
+```shell script
+python deeplio/train.py --lr 0.01 --weight-decay 0.0001 -b 32 --epochs 100 -j 6 --device cuda --print-freq 10 --lr-decay 20
+``` 
+
+For each traning instance one folder with the current timestampm will be created and the outputs of the netowork are all saved in there.
+The Ouputs are:
+- Checkpoints. 
+- Logfile.
+- Tensorboard logfile.
