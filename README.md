@@ -5,33 +5,39 @@ __Deep Lidar Inertial Odometry__
 
 1. Intorduction
 
-DeepLIO is an deep learning based odometry estimation using lidar and IMU. 
+DeepLIO is an deep learning based odometry estimation by fusing lidar and IMU. 
 
 Cloning deeplio
 ```
 git clone https://github.com/ArashJavan/DeepLIO.git
+cd DeepLIO
 ```
 
 
-__1.1 Dependencies__
+### __1.1 Dependencies__
 
 Following packages should be already installed, before you can start using deeplio.
 - pytorch 
 - tqdm (optional)
 - open3d (optinal)
 
-__1.2 Preparing the KITTI Dataset__
+### __1.2 Preparing the KITTI Dataset__
 
 __Downloading KITTI__
 
-In this project the KITTI Raw dataset is used, since we also need IMU measurments.
-Please run the _download_kitti_raw.sh_ script to download the KITTI raw sequences.
+In this project the synced and unsyced (extract) version of the KITTI dataset is used.
+From unsynced (extract) data we only need the IMu measurments and from the synced data the lidar frames and the ground truth. 
+So if you want to reduce the storage space, you can safely remove the images folder and also the lidar frames from the unsyced versoin.
+Eithter you download the datasets by yourself or you can also  run the _download_kitti_raw.sh_ script to download the KITTI raw sequences.
 
-__Note__: You will need at least 150 GB free sapce on your hard drive.
+__Note__: You will need at least 300 GB free sapce on your hard drive.
 
 ```
-$ mkdir KITTI
-$ download_kitti_raw.sh ./KITTI
+$ mkdir -p datasets/KITTI/sync
+$ download_kitti_raw.sh datasets/KITTI  sync
+
+$ mkdir -p datasets/KITTI/extract
+$ download_kitti_raw.sh datasets/KITTI  extract
 ```
 Now wait till download is completed. Well it will take a long long time so go get some coffee :)
 
@@ -39,37 +45,55 @@ At the end you will find all sequences extracted under KITTI folder
 ```
 KITTI
 |
-|-> 2011_09_30
-    |-> 2011_09_30_drive_0016_extract
-        |-> image0 .. imahe3
-        |->oxts
-        |->velodyne_points
+ extract|
+        |> 2011_09_30
+        |-> 2011_09_30_drive_0016_extract
+            |-> image0 .. imahe3
+            |->oxts
+            |->velodyne_points
+        .
+        .
+        .
+    |-> 2011_10_03
+        |-> 2011_09_03_drive_0027_extract
     .
     .
     .
-|-> 2011_10_03
-    |-> 2011_09_03_drive_0027_extract
+ sync|
     .
     .
     .
 ```
 
-__Converting Frames (optional)__
+### __1.3 DeepLIO Architecture__
+DeepLIO is made completely modular and configurable, e.g. every part and module can be combined with other modules to build
+the whole network architecture. As you can see from the following figure, there are four main modules.
+- __LiDAR-Feature-Nets__:
+This module is responsible for extracting (learn) and encoding the LiDAR frames which are first transformed by spherical projection.
+- __IMU-Feature-Nets__:
+This module is responsible for extracting (learn) and encoding the IMU measurements, which consists of linear acceleration and 
+ angular velocity (dim=6).
+- __Fusion-Net__:
+This module is responsible for fusing the features extract fom LiDAR and IMU.
+- __Odometry-Net__:
+At least in this module the fused features are used to learn the hidden state, which shall explain the odometry information 
+encoded in these features.
 
-In the KITTI raw unsynced sequences the velodyne frames are saved as plain text files, 
-consisting of x,y,z and remission of each measured point. 
-Each frame's text file consists of several thousand points, which makes these file 
-huge and also reading these files takes a long time. For that reason it is better to convert
-them into a binary format first.
- 
-Please run following script to convert the raw text files to numpy binary.
- ```
-cd scripts
-python ./convert_velo_txt2bin.py -p KITTI/2011_09_30/2011_09_30_drive_0016_extract/velodyne_points/data/ \
-KITTI/2011_09_30/2011_09_30_drive_0018_extract/velodyne_points/data/ [more velodyne data paths]
-```
-You can pass only one path or multiple at once. To accelerate conversion and save time the conversion script above 
-starts multiple processes, so do not be afraid if your CPU is running under 100% load.
+<img src="resources/images/deeplio.png" alt="deeplio" width="500"/>
 
-After the converting is done, you can start with training or evaluating.
+#### __1.3.1 LiDAR-Feature-Nets__
+The input to this module are the projected LiDAR frames, which in the current configuration is built by stacking two remission (intensity) and
+depth channels together. The module itself is made of an arbitrary Convolutional Neural Network (CNN). These networks are 
+implemented as a [siamese netowrk](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L135)
+with shared parameters. At this point in time there are three CNN-Architectures implemented:
+1.  [Simple-Feature-Net-0](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L116)
+This network is make of standard CNN-Layers which are stacked together.
+
+ <img src="resources/images/deeplio.png" alt="deeplio" width="500"/>
+
+  
+
+
+
+
 

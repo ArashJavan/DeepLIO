@@ -29,15 +29,13 @@ datasets:
     #mean: [-0.0581, 0.4165, -0.8585, 8.2594, 0.2164]
     #std: [10.0366, 7.4936, 0.8761, 9.5056, 0.1740]
 
-### DeepLIO Networks ##############################
-
-# Lidar and IMU (DeepLIO) Neuronal Network
+### DeepLIO Network ##############################
 deeplio:
   dropout: 0.25
   pretrained: false
   model-path: ""
   lidar-feat-net:
-    name: "lidar-feat-simple-1" # [simple0, simple1, pointseg]
+    name: "lidar-feat-simple-1"
     pretrained: false
     model-path: ""
   imu-feat-net:
@@ -45,34 +43,10 @@ deeplio:
     pretrained: false
     model-path: ""
   odom-feat-net:
-    name: "odom-feat-rnn" # [fc, rnn]
+    name: "odom-feat-rnn"
     pretrained: false
     model-path: ""
   fusion-net: "fusion-layer"
-
-# Lidar Neuronal Network
-deeplo:
-  dropout: 0.25
-  pretrained: false
-  model-path: ""
-  lidar-feat-net:
-    name: "lidar-feat-simple-1" # [simple0, simple1, pointseg]
-    pretrained: false
-    model-path: ""
-  odom-feat-net:
-    name: "odom-feat-rnn" # [fc, rnn]
-    pretrained: false
-    model-path: ""
-
-# IMU Neuronal Network
-deepio:
-  dropout: 0.
-  pretrained: false
-  model-path: ""
-  imu-feat-net:
-    name: "imu-feat-rnn"  # [fc, rnn]
-    pretrained: false
-    model-path: ""
 
 ### Lidar Feature Netowrks ###########################
 # feature network simple0 with conv layers
@@ -142,7 +116,6 @@ losses:
   geoloss:
     params:
 
-arch: "deeplio"  # [deepio, deeplo, deeplio]
 current-dataset: 'kitti'
 channels: [3, 4] # channesl: x=0, y=1, z=2, range(x,y,z)=3, remissions=4
 optimizer: 'adam'

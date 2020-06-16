@@ -44,7 +44,17 @@ class Trainer(Worker):
         transform = None
         self.data_last = None
 
-        self.train_dataset = ds.Kitti(config=self.cfg, transform=transform)
+        self.model = nets.get_model(input_shape=(self.n_channels, self.im_height_model, self.im_width_model),
+                                    cfg=self.cfg, device=self.device)
+
+        self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
+        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.args.lr_decay, gamma=0.5)
+        self.criterion = get_loss_function(self.cfg, args.device)
+
+        has_lidar = True if self.model.lidar_feat_net is not None else False
+        has_imu = True if self.model.imu_feat_net is not None else False
+
+        self.train_dataset = ds.Kitti(config=self.cfg, transform=transform, has_imu=has_imu, has_lidar=has_lidar)
         self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
                                                             num_workers=self.num_workers,
                                                             shuffle=True,
@@ -60,13 +70,6 @@ class Trainer(Worker):
 
         self.data_permuter = DataCombiCreater(combinations=self.combinations,
                                               device=self.device)
-
-        self.model = nets.get_model(input_shape=(self.n_channels, self.im_height_model, self.im_width_model),
-                                    cfg=self.cfg, device=self.device)
-
-        self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
-        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.args.lr_decay, gamma=0.5)
-        self.criterion = get_loss_function(self.cfg, args.device)
 
         # debugging and visualizing
         self.logger.print("System Training Configurations:")
@@ -323,67 +326,6 @@ class Trainer(Worker):
         if is_best:
             file_path_best = '{}/{}_best.tar'.format(self.checkpoint_dir, filename)
             shutil.copyfile(file_path, file_path_best)
-
-
-class TrainerDeepIO(Trainer):
-    ACTION = "train_deepio"
-
-    def post_init(self):
-        # log the network structure and number of params
-        # log the network structure and number of params
-        self.logger.info("{}: Network architecture:".format(self.model.name))
-        imu_data = torch.rand((1, self.seq_size, 2, 6)).to(self.device)
-        self.model.eval()
-        self.logger.print(summary(self.model, imu_data))
-
-    def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
-        # compute model predictions and loss
-        pred_x, pred_q = self.model(imus)
-        loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
-        return pred_x, pred_q, loss
-
-    def post_train_iter(self):
-        pass
-
-    def post_valiate(self):
-        pass
-
-
-class TrainerDeepLO(Trainer):
-    ACTION = "train_deeplo"
-
-    def post_init(self):
-        # log the network structure and number of params
-        # log the network structure and number of params
-        self.logger.info("{}: Network architecture:".format(self.model.name))
-        data = torch.randn((1, self.seq_size+1, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
-        self.model.eval()
-        self.logger.print(summary(self.model, data))
-
-    def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
-        # compute model predictions and loss
-        pred_x, pred_q = self.model(imgs)
-        loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
-        return pred_x, pred_q, loss
-
-    def post_train_iter(self):
-        # save infos to -e.g. gradient hists and images to tensorbaord and the end of training
-        b, s, c, h, w = np.asarray(self.data_last['images'].shape)
-        imgs = self.data_last['images'].reshape(b*s, c, h, w)
-        imgs_remossion = imgs[:, 1, :, :]
-        imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
-        imgs_remossion = torch.stack(imgs_remossion)
-        imgs_remossion = make_grid(imgs_remossion, nrow=2)
-        self.tensor_writer.add_image("Images/Remissions", imgs_remossion, global_step=self.step_val)
-
-        imgs_range = imgs[:, 0, :, :]
-        imgs_range = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_range]
-        imgs_range = torch.stack(imgs_range)
-        imgs_range = make_grid(imgs_range, nrow=2)
-        self.tensor_writer.add_image("Images/Range", imgs_range, global_step=self.step_val)
-
-    def post_valiate(self):
-        pass
 
 
 class TrainerDeepLIO(Trainer):

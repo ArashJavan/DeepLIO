@@ -200,13 +200,12 @@ class Kitti(data.Dataset):
     # We set the min. no. so we can check and ignore these holes.
     MIN_NUM_OXT_SAMPLES = 8
 
-    def __init__(self, config, ds_type='train', transform=None):
+    def __init__(self, config, ds_type='train', transform=None, has_imu=True, has_lidar=True):
         """
         :param root_path:
         :param config: Configuration file including split settings
         :param transform:
         """
-        self.arch_type = config['arch']
         ds_config_common = config['datasets']
         ds_config = ds_config_common['kitti']
         self._seq_size = ds_config_common['sequence-size'] # Increment because we need always one sample more
@@ -217,6 +216,9 @@ class Kitti(data.Dataset):
         self.mean_imu = ds_config['mean-imu']
         self.std_imu = ds_config['std-imu']
         self.channels = config['channels']
+
+        self.has_imu = has_imu
+        self.has_lidar = has_lidar
 
         crop_factors = ds_config.get('crop-factors', [0, 0])
         self.crop_top = crop_factors[0]
@@ -400,14 +402,15 @@ class Kitti(data.Dataset):
         # Get frame timestamps
         velo_timespamps = [dataset.timestamps_velo[idx] for idx in indices]
 
-        if self.arch_type == 'deepio':
-            arch_data = self.create_imu_data(dataset, indices, velo_timespamps)
-        elif self.arch_type == 'deeplo':
-            arch_data = self.create_lidar_data(dataset, indices, velo_timespamps)
-        elif self.arch_type == 'deeplio':
-            arch_data = self.create_data_deeplio(dataset, indices, velo_timespamps)
-        else:
-            raise ValueError("Wrong arch type {}".format(self.arch_type))
+        lidar_data = {}
+        if self.has_lidar:
+            lidar_data = self.create_lidar_data(dataset, indices, velo_timespamps)
+
+        imu_data = {}
+        if self.has_imu:
+            imu_data = self.create_imu_data(dataset, indices, velo_timespamps)
+
+        arch_data = {**imu_data, **lidar_data}
 
         # load and transform ground truth
         gts = torch.from_numpy(self.load_ground_truth(dataset, indices)).type(torch.float32)

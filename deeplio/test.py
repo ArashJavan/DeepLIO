@@ -10,7 +10,7 @@ content_dir = os.path.abspath("{}/..".format(dname))
 sys.path.append(dname)
 sys.path.append(content_dir)
 
-from deeplio.models.tester import TesterDeepIO, TesterDeepLO, TesterDeepLIO
+from deeplio.models.tester import  TesterDeepLIO
 
 
 def signal_handler(signum, frame):
@@ -48,15 +48,7 @@ if __name__ == '__main__':
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
-    arch = cfg['arch'].lower()
-
-    if arch == 'deepio':
-        tester = TesterDeepIO(args, cfg)
-    elif arch == 'deeplo':
-        tester = TesterDeepLO(args, cfg)
-    elif arch == 'deeplio':
-        tester = TesterDeepLIO(args, cfg)
-
+    tester = TesterDeepLIO(args, cfg)
     tester.run()
 
     print("Done!")

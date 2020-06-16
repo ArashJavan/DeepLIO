@@ -23,94 +23,6 @@ class BaseDeepLIO(BaseNet):
         raise NotImplementedError()
 
 
-class DeepIO(BaseDeepLIO):
-    def __init__(self, cfg):
-        super(DeepIO, self).__init__()
-
-        self.logger = get_app_logger()
-
-        self.cfg = cfg['deepio']
-        self.p = self.cfg.get('dropout', 0.)
-        self.imu_feat_net = None
-        self.drop = None
-        self.fc_pos = None
-        self.fc_ori = None
-
-    def initialize(self):
-        if self.imu_feat_net is None:
-            raise ValueError("{}: feature net is not defined!".format(self.name))
-
-        in_features = self.imu_feat_net.get_output_shape()
-
-        if self.p > 0:
-            self.drop = nn.Dropout(self.p)
-        self.fc_pos = nn.Linear(in_features[2], 3)
-        self.fc_ori = nn.Linear(in_features[2], 4)
-
-    def forward(self, x):
-        x = self.imu_feat_net(x)
-
-        #x = F.relu(self.fc1(x), inplace=True)
-        #x = self.bn1(x)
-        b, s, n = x.shape
-        x = x.view(b*s, n)
-        if self.p > 0.:
-            x = self.drop(x)
-
-        x_pos = self.fc_pos(x)
-        x_ori = self.fc_ori(x)
-        return x_pos, x_ori
-
-    def get_feat_networks(self):
-        return [self.imu_feat_net]
-
-
-class DeepLO(BaseDeepLIO):
-    """Base class for all DepplioN Networks"""
-    def __init__(self, input_shape, cfg, bn_d=0.1):
-        super(DeepLO, self).__init__()
-
-        self.logger = get_app_logger()
-        self.cfg = cfg['deeplo']
-        self.p = self.cfg.get('dropout', 0.)
-        self.bn_d = bn_d
-        self.input_shape = input_shape
-
-        self.lidar_feat_net = None
-        self.odom_feat_net = None
-
-        self.drop = None
-        self.fc_pos = None
-        self.fc_ori = None
-
-    def initialize(self):
-        if self.lidar_feat_net is None or self.odom_feat_net is None:
-            raise ValueError("{}: feature networks are not defined!".format(self.name))
-
-        in_shape = self.odom_feat_net.get_output_shape()[2] # [N]
-
-        if self.p > 0:
-            self.drop = nn.Dropout(self.p)
-        self.fc_pos = nn.Linear(in_shape, 3)
-        self.fc_ori = nn.Linear(in_shape, 4)
-
-    def forward(self, x):
-        x = self.lidar_feat_net(x)
-        x = self.odom_feat_net(x)
-
-        b, s = x.shape[0:2]
-        x = x.reshape(b*s, -1)
-        if self.p > 0.:
-            x = self.drop(x)
-
-        x_pos = self.fc_pos(x)
-        x_ori = self.fc_ori(x)
-        return x_pos, x_ori
-
-    def get_feat_networks(self):
-        return [self.lidar_feat_net, self.odom_feat_net]
-
-
 class DeepLIO(BaseDeepLIO):
     """Base class for all DepplioN Networks"""
     def __init__(self, input_shape, cfg, bn_d=0.1):
@@ -129,12 +41,17 @@ class DeepLIO(BaseDeepLIO):
         self.drop = None
         self.fc_pos = None
         self.fc_ori = None
+        self.feat_nets = None
 
     def initialize(self):
-        if self.lidar_feat_net is None or self.odom_feat_net is None or self.imu_feat_net is None:
-            raise ValueError("{}: feature networks are not defined!".format(self.name))
+        self.feat_nets = [self.odom_feat_net, self.fusion_net, self.imu_feat_net, self.lidar_feat_net]
+        last_layer = None
+        for net in self.feat_nets:
+            if net is not None:
+                last_layer = net
+                break
 
-        in_shape = self.odom_feat_net.get_output_shape()[2] # [N]
+        in_shape = last_layer.get_output_shape()[2] # [N]
 
         if self.p > 0:
             self.drop = nn.Dropout(self.p)
@@ -144,23 +61,43 @@ class DeepLIO(BaseDeepLIO):
     def forward(self, x):
         lidar_imgs = x[0]  # lidar image frames
         imu_meas = x[1]  # imu measurments
-        x_feat_lidar = self.lidar_feat_net(lidar_imgs)
-        x_feat_imu = self.imu_feat_net(imu_meas)
+        x_last_feat = None
 
-        x_fusion = self.fusion_net([x_feat_lidar, x_feat_imu])
-        x_odom = self.odom_feat_net(x_fusion)
+        x_feat_lidar = None
+        if self.lidar_feat_net is not None:
+            x_feat_lidar = self.lidar_feat_net(lidar_imgs)
+            x_last_feat = x_feat_lidar
 
-        b, s = x_odom.shape[0:2]
-        x_odom = x_odom.reshape(b*s, -1)
+        x_feat_imu = None
+        if self.imu_feat_net is not None:
+            x_feat_imu = self.imu_feat_net(imu_meas)
+            x_last_feat = x_feat_imu
+
+        x_fusion = None
+        if self.fusion_net is not None:
+            x_fusion = self.fusion_net([x_feat_lidar, x_feat_imu])
+            x_last_feat = x_fusion
+
+        x_odom = None
+        if self.odom_feat_net is not None:
+            x_odom = self.odom_feat_net(x_last_feat)
+            x_last_feat = x_odom
+
+        b, s = x_last_feat.shape[0:2]
+        x_last_feat = x_last_feat.reshape(b*s, -1)
         if self.p > 0.:
-            x_odom = self.drop(x_odom)
+            x_last_feat = self.drop(x_last_feat)
 
-        x_pos = self.fc_pos(x_odom)
-        x_ori = self.fc_ori(x_odom)
+        x_pos = self.fc_pos(x_last_feat)
+        x_ori = self.fc_ori(x_last_feat)
         return x_pos, x_ori
 
     def get_feat_networks(self):
-        return [self.lidar_feat_net, self.imu_feat_net, self.odom_feat_net]
+        nets = []
+        for net in self.feat_nets:
+            if net is not None:
+                nets.append(net)
+        return nets
 
 
 class DeepLIOFusionLayer():

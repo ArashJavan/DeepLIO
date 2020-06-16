@@ -185,9 +185,6 @@ class Tester(Worker):
                         ("Loss test", losses.avg, step_val)
                     self.tensor_writer.flush()
 
-                #if idx > 20:
-                #    break
-
         if curr_seq is not None:
             curr_seq.write_to_file()
 
@@ -195,44 +192,6 @@ class Tester(Worker):
         pred_x = None
         pred_q = None
         loss = None
-        return pred_x, pred_q, loss
-
-
-class TesterDeepIO(Tester):
-    ACTION = "test_deepio"
-
-    def eval_model_and_loss(self, imgs, imus, gt_local_x, gt_local_q):
-        # compute model predictions and loss
-        pred_x, pred_q = self.model(imus)
-
-        # rotation
-        if self.args.param == 'xq':
-            loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
-        elif self.args.param == 'x':
-            loss = self.criterion(pred_x, gt_local_q, gt_local_x, gt_local_q)
-        elif self.args.param == 'q':
-            loss = self.criterion(gt_local_x, pred_q, gt_local_x, gt_local_q)
-        else:
-            loss = self.criterion(gt_local_x, gt_local_q, gt_local_x, gt_local_q)
-        return pred_x, pred_q, loss
-
-
-class TesterDeepLO(Tester):
-    ACTION = "test_deeplo"
-
-    def eval_model_and_loss(self, imgs, imus, gt_local_x, gt_local_q):
-        # compute model predictions and loss
-        pred_x, pred_q = self.model(imgs)
-
-        # rotation
-        if self.args.param == 'xq':
-            loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
-        elif self.args.param == 'x':
-            loss = self.criterion(pred_x, gt_local_q, gt_local_x, gt_local_q)
-        elif self.args.param == 'q':
-            loss = self.criterion(gt_local_x, pred_q, gt_local_x, gt_local_q)
-        else:
-            loss = self.criterion(gt_local_x, gt_local_q, gt_local_x, gt_local_q)
         return pred_x, pred_q, loss
 
 
