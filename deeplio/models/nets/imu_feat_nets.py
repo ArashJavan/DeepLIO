@@ -22,6 +22,7 @@ class ImuFeatFC(BaseImuFeatNet):
     def __init__(self, cfg):
         super(ImuFeatFC, self).__init__(cfg)
         self.hidden_size = cfg.get('hidden-size', [6, 6])
+        self.num_layers = len(self.hidden_size)
 
         layers = [nn.Linear(self.input_size, self.hidden_size[0])]
         for i in range(1, self.num_layers):

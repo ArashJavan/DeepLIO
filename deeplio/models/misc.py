@@ -90,8 +90,8 @@ class ConfigContainer:
         self.args = args
         self.ds_cfg = self.cfg['datasets']
         self.curr_dataset_cfg = self.cfg['datasets'][self.cfg['current-dataset']]
-        self.seq_size = self.ds_cfg['sequence-size']
         self.combinations = np.array(self.ds_cfg['combinations'])
+        self.seq_size = len(self.combinations) # self.ds_cfg['sequence-size']
         self.device = self.args.device
         self.batch_size = self.args.batch_size
 
