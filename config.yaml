@@ -1,6 +1,6 @@
 datasets:
   sequence-size: 2 # must be >= 1
-  combinations: [[0, 2], [1, 2]]
+  combinations: [[0, 1], [0, 2], [1, 2]]
   kitti:
     root-path-sync: "datasets/KITTI/sync"
     root-path-unsync: "datasets/KITTI/extract"
@@ -13,12 +13,14 @@ datasets:
     min-depth: 1.
     inverse-depth: true
     train:
-      2011-10-03: [27, 42, 34]
-      2011-09-30: [16, 18, 20, 27, 28]
+      2011-10-03: [27, 34] # [27, 42, 34]
+      2011-09-30: [16] # [16, 18, 20, 27, 28]
     test:
-      2011-09-30: [33, 34]
+      2011-10-03: [27, 34] # [27, 42, 34]
+      2011-09-30: [16, 33, 34]
     validation:
-      2011-09-26: [23, 39]
+      # 2011-09-26: [23, 39]
+      2011-09-30: [33, 34]
 
     # channesl: x, y, z, range(x,y,z), remissions)
     mean-image: [-0.05815, 0.4165, -0.8585, 0.1029, 0.2164]
@@ -35,7 +37,7 @@ deeplio:
   pretrained: false
   model-path: ""
   lidar-feat-net:
-    name: "lidar-feat-simple-1"
+    name: # "lidar-feat-simple-1"
     pretrained: false
     model-path: ""
   imu-feat-net:
@@ -43,7 +45,7 @@ deeplio:
     pretrained: false
     model-path: ""
   odom-feat-net:
-    name: "odom-feat-rnn"
+    name: # "odom-feat-fc"
     pretrained: false
     model-path: ""
   fusion-net: "fusion-layer"
@@ -71,8 +73,7 @@ lidar-feat-pointseg:  # pointseg feature
 ### Odometry Feature Netowrks ###########################
 # odometry feature network with fully connected layers
 odom-feat-fc:
-  size: [512]
-  fusion: cat # [cat, sub]
+  size: [256]
   dropout: 0.
 
 # odometry feature network with rnn-layers
@@ -80,20 +81,20 @@ odom-feat-rnn:
   type: "lstm"
   hidden-size: 512
   num-layers: 2
-  bidirectional: false
+  bidirectional: true
   dropout: 0.
 
 ### IMU Feature Netowrks ###########################
 # IMU Feature Netowrks
 imu-feat-fc:  # FC
   input-size: 6  # !fixed! do not chanage
-  hidden-size: [256, 256]
+  hidden-size: [1024, 512, 256]
   dropout: 0.
 
 imu-feat-rnn: # RNN
   type: "lstm"
   input-size: 6  # !fixed! do not chanage
-  hidden-size: 256
+  hidden-size: 128
   num-layers: 2
   bidirectional: true
   dropout: 0.

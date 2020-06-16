@@ -116,7 +116,7 @@ def create_imu_feat_net(cfg, arch_cfg, device):
     if feat_name == 'imu-feat-fc':
         feat_net = ImuFeatFC(cfg[feat_name])
     elif feat_name == 'imu-feat-rnn':
-        feat_net = ImufeatRNN0(cfg[feat_name])
+        feat_net = ImuFeatRnn1(cfg[feat_name])
     else:
         raise ValueError("Wrong feature network {}".format(feat_name))
 

@@ -82,18 +82,197 @@ encoded in these features.
 <img src="resources/images/deeplio.png" alt="deeplio" width="500"/>
 
 #### __1.3.1 LiDAR-Feature-Nets__
-The input to this module are the projected LiDAR frames, which in the current configuration is built by stacking two remission (intensity) and
+The inputs to this module are the projected LiDAR frames, which in the current configuration is built by stacking two remission (intensity) and
 depth channels together. The module itself is made of an arbitrary Convolutional Neural Network (CNN). These networks are 
 implemented as a [siamese netowrk](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L135)
 with shared parameters. At this point in time there are three CNN-Architectures implemented:
+
 1.  [Simple-Feature-Net-0](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L116)
-This network is make of standard CNN-Layers which are stacked together.
+This network is made of standard CNN-Layers which are stacked together.
+<img src="resources/images/lidar_feat_s0.png" alt="lidar_s0" width="500"/>
+ 
+2.  [Simple-Feature-Net-1](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L151)
+This network is also made of standard CNN-Layers which are stacked together, but additionally one can similar to ResNET
+also activate bypass connections between layers. Furthermore the middle layers are duplicated, since in these layers
+the feautre-map has for both vertical and horizontal directions nearly the same field of view (FOV) resolution, 
+if you assume it as degrees. 
+<img src="resources/images/lidar_feat_s1.png" alt="lidar_s1" width="500"/>
 
- <img src="resources/images/deeplio.png" alt="deeplio" width="500"/>
+3. [PointSeg-Feature-Net-1](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L43)
+This network is the implementation of the more demanding [PointSeg Netowrk](https://github.com/ArashJavan/PointSeg). 
+the network it self is made of three functional layers, the so called Fire layers,  squeeze reweighting
+layer and enlargement layer. An interested reader may find more information about each of those layers in the original
+[PointSeg paper](https://arxiv.org/pdf/1807.06288.pdf).
 
-  
+All the above listed networks can be found and configured in the configuration file:
+
+```yaml
+### Lidar Feature Netowrks ###########################
+# feature network simple0 with conv layers
+lidar-feat-simple-0:
+  dropout: 0.
+  fusion: cat # [cat, sub]
+
+# feature network simple0 with bypassed conv layers
+lidar-feat-simple-1:
+  dropout: 0.
+  fusion: cat # [cat, sub]
+  bypass: true
+
+# feature network pointseg
+lidar-feat-pointseg:  # pointseg feature
+  dropout: 0.
+  classes: ['unknown', 'object']
+  bypass: true
+  fusion: cat # [cat, sub]
+  part: "encoder" # [encoder, encoder+decoder]
+```
+
+With the keyword _fusion_ you can define, if the both threads of the siamese network should be concatenated together or subtracted.
+Please note that by subtracting you will have the half number of feature as by concatenating. 
+
+#### __1.3.3 IMU-Feature-Nets__
+The inputs to this modules are sequences of the IMU measurements. Basically any kind of Fully Connected (FC) Network
+can be configured here. Since the IMU measurements are also time series it is quit appealing to handle them 
+with an RNN based network. For this reason both of these networks - FC and RNN (LSTM, GRU), are also implemented 
+in the  [IMU-Module](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/imu_feat_nets.py).
+Again you can freely configure each network in the config-file section:
+
+```yaml
+### IMU Feature Netowrks ###########################
+# IMU Feature Netowrks
+imu-feat-fc:  # FC
+  input-size: 6  # !fixed! do not chanage
+  hidden-size: [1024, 512, 256]
+  dropout: 0.
+
+imu-feat-rnn: # RNN
+  type: "lstm"
+  input-size: 6  # !fixed! do not chanage
+  hidden-size: 128
+  num-layers: 2
+  bidirectional: true
+  dropout: 0.
+```
+
+Please note that the networks are build dynamically, e.g. you can change number of hidden layers an other stuff as required.
+
+#### __1.3.2 Fusion-Layer__
+After we have encoded the features in each sensory information by passing them through each IMU and LiDAR Network, 
+we should some how fusion them together for the task of odometry inference. One classical approach may be using some kind of 
+filter like for example Kalman-Filter, but since we want a fully differentiable system, we should integrate this part also 
+in the network. One simple procedure would be just concatenating them together, or use another network to learn the 
+correlation between those features, as in attention based networks. For now only concatenating procedure is implemented.
+
+```yaml
+### Fusion-Layer for DeepLIO Net ###########################
+fusion-layer:
+  type: "cat" # [cat, soft-fusion]
+```
+
+#### __1.3.4 Odometry-Feature-Nets__
+This layer should learn how to extract information needed for the task fo odometery inference from the fused features.
+Since odometry inference can be  typically seen as an inference in a time series, both RNN-based an FC-based networks 
+can be used here. Like in IMU-Features you can configure the odom-feat-network as you need.
+
+```yaml
+### Odometry Feature Netowrks ###########################
+# odometry feature network with fully connected layers
+odom-feat-fc:
+  size: [256]
+  dropout: 0.
+
+# odometry feature network with rnn-layers
+odom-feat-rnn:
+  type: "lstm"
+  hidden-size: 512
+  num-layers: 2
+  bidirectional: true
+  dropout: 0.
+```
+ 
+### __1.4 Configuring DeepLIO__
+As mentioned before you can configure each module of the network as you need, e.g. you can also forego some modules if you
+want.  
+
+```yaml
+### DeepLIO Network ##############################
+deeplio:
+  dropout: 0.25
+  pretrained: false
+  model-path: ""
+  lidar-feat-net:
+    name: "lidar-feat-simple-1"
+    pretrained: false
+    model-path: ""
+  imu-feat-net:
+    name: "imu-feat-rnn"
+    pretrained: false
+    model-path: ""
+  odom-feat-net:
+    name: "odom-feat-fc"
+    pretrained: false
+    model-path: ""
+  fusion-net: "fusion-layer"
+```
+
+You can choose between different network implementations by just replacing the name of the desired network.  
 
 
+#### __1.4.1 DeepIO 
+__Deep Inertial Odometry__
+You can configure the network in a way that it only uses IMU measurements for odometry prediction. You do it 
+just by commenting out '#' the name of all other modules, as below:
 
+```yaml
+ ### DeepLIO Network ##############################
+deeplio:
+  dropout: 0.25
+  pretrained: false
+  model-path: ""
+  lidar-feat-net:
+    name: # "lidar-feat-simple-1" # See the name is commented out
+    pretrained: false
+    model-path: ""
+  imu-feat-net:
+    name: "imu-feat-rnn"
+    pretrained: false
+    model-path: ""
+  odom-feat-net:
+    name: # "odom-feat-fc" # See the name is commented out
+    pretrained: false
+    model-path: ""
+  fusion-net: "fusion-layer"
+```
 
+Please also note that you can for example have IMU and Odometry module by just commenting Lidar-Module out!
+
+#### __1.4.2 DeepLO 
+__Deep LiDAR Odometry__
+In the same way you can configure the network in a way that it only uses Lidar measurements for odometry prediction. You do it 
+just by commenting out '#' the name of all other modules, as below:
+
+```yaml
+ ### DeepLIO Network ##############################
+deeplio:
+  dropout: 0.25
+  pretrained: false
+  model-path: ""
+  lidar-feat-net:
+    name: "lidar-feat-simple-1"
+    pretrained: false
+    model-path: ""
+  imu-feat-net:
+    name: "imu-feat-rnn"  # See the name is commented out
+    pretrained: false
+    model-path: ""
+  odom-feat-net:
+    name: # "odom-feat-fc" # See the name is commented out
+    pretrained: false
+    model-path: ""
+  fusion-net: "fusion-layer"
+```
+
+Please also note that you can for example have LiDAR and Odometry module by just commenting IMU-Module out!
+As you can easily guess you will get the whole __DeepLIO__ netowrk by naming all the modules you want in the network.  
 
