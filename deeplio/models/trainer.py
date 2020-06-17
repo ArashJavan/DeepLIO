@@ -48,7 +48,8 @@ class Trainer(Worker):
                                     cfg=self.cfg, device=self.device)
 
         self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
-        self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.args.lr_decay, gamma=0.5)
+        self.lr_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(self.optimizer,
+                                                                      self.lr_adjuster)
         self.criterion = get_loss_function(self.cfg, args.device)
 
         self.has_lidar = True if self.model.lidar_feat_net is not None else False
@@ -321,6 +322,13 @@ class Trainer(Worker):
 
         self.post_valiate()
         return losses.avg
+
+    def lr_adjuster(self, epoch):
+        curr_lr = self.lr_scheduler.get_last_lr()[0]
+        if epoch > 0 and (epoch % self.args.lr_decay == 0):
+            if curr_lr > 1e-5:
+                return 0.5
+        return 1.
 
     def save_checkpoint(self, state, is_best, filename="checkpoint"):
         file_path = '{}/{}.tar'.format(self.checkpoint_dir, filename)
