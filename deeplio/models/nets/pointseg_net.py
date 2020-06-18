@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
 
+from .base_net import BaseNet
 from .pointseg_modules import Fire, FireDeconv, SELayer, ASPP
 
 
-class PSEncoder(nn.Module):
+class PSEncoder(BaseNet):
     def __init__(self, input_shape, cfg, bn_d = 0.1):
         super(PSEncoder, self).__init__()
         bn_d = bn_d
@@ -94,7 +95,7 @@ class PSEncoder(nn.Module):
         return self.output_shapes
 
 
-class PSDecoder(nn.Module):
+class PSDecoder(BaseNet):
     def __init__(self, input_shape, cfg):
         super(PSDecoder, self).__init__()
         bn_d = 0.1

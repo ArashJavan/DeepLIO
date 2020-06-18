@@ -41,12 +41,11 @@ class DeepLIO(BaseDeepLIO):
         self.drop = None
         self.fc_pos = None
         self.fc_ori = None
-        self.feat_nets = None
 
     def initialize(self):
-        self.feat_nets = [self.odom_feat_net, self.fusion_net, self.imu_feat_net, self.lidar_feat_net]
+        feat_nets = [self.odom_feat_net, self.fusion_net, self.imu_feat_net, self.lidar_feat_net]
         last_layer = None
-        for net in self.feat_nets:
+        for net in feat_nets:
             if net is not None:
                 last_layer = net
                 break
@@ -93,10 +92,12 @@ class DeepLIO(BaseDeepLIO):
         return x_pos, x_ori
 
     def get_feat_networks(self):
+        feat_nets = [self.odom_feat_net, self.imu_feat_net, self.lidar_feat_net]
         nets = []
-        for net in self.feat_nets:
-            if net is not None:
-                nets.append(net)
+        for feat_net in feat_nets:
+            if feat_net is not None:
+                m = feat_net.get_modules()
+                nets.extend(m)
         return nets
 
 

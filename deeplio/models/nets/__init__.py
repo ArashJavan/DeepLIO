@@ -94,9 +94,17 @@ def create_lidar_feat_net(input_shape, cfg, arch_cfg, device):
 
     if feat_cfg['pretrained']:
         model_path = feat_cfg['model-path']
-        load_state_dict(feat_net, model_path)
+        # TODO: PointSeg is mad eof Encoder and decoder,
+        # Load them in a more generic way.
+        if feat_name == 'lidar-feat-pointseg' and 'encoder' in model_path:
+            net = feat_net.encoder
+            load_state_dict(net, model_path)
+        elif feat_name == 'lidar-feat-pointseg' and 'decoder' in model_path:
+            net = feat_net.decoder
+            load_state_dict(net, model_path)
+        else:
+            load_state_dict(feat_net, model_path)
         feat_net.pretrained = True
-
     return feat_net
 
 
@@ -126,7 +134,6 @@ def create_imu_feat_net(cfg, arch_cfg, device):
         model_path = feat_cfg['model-path']
         load_state_dict(feat_net, model_path)
         feat_net.pretrained = True
-
     return feat_net
 
 
@@ -171,7 +178,6 @@ def create_odometry_feat_net(input_shape, cfg, arch_cfg, device):
         model_path = feat_cfg['model-path']
         load_state_dict(feat_net, model_path)
         feat_net.pretrained = True
-
     return feat_net
 
 

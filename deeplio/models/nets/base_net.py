@@ -28,6 +28,9 @@ class BaseNet(nn.Module):
                                .format(len(devices)))
         return next(iter(devices))
 
+    def get_modules(self):
+        return [self]
+
 
 def num_flat_features(x, dim=1):
     size = x.size()[dim:]  # all dimensions except the dim (e.g. dim=1 batch, dim=2 seq. )
