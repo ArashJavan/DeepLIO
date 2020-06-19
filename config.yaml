@@ -27,16 +27,13 @@ datasets:
     mean-imu: [-0.0635, 0.186, 9.7966, 0., 0.0005, 0.0082]
     std-imu: [0.8525, 0.9516, 0.3401, 0.0198, 0.02204, 0.1383]
 
-    #mean: [-0.0581, 0.4165, -0.8585, 8.2594, 0.2164]
-    #std: [10.0366, 7.4936, 0.8761, 9.5056, 0.1740]
-
 ### DeepLIO Network ##############################
 deeplio:
   dropout: 0.25
   pretrained: false
   model-path: ""
   lidar-feat-net:
-    name: # "lidar-feat-simple-1"
+    name: "lidar-feat-simple-1"
     pretrained: false
     model-path: ""
   imu-feat-net:
@@ -44,10 +41,11 @@ deeplio:
     pretrained: false
     model-path: ""
   odom-feat-net:
-    name: # "odom-feat-fc"
+    name: "odom-feat-fc"
     pretrained: false
     model-path: ""
-  fusion-net: "fusion-layer"
+  fusion-net:
+    name: "fusion-layer-soft"
 
 ### Lidar Feature Netowrks ###########################
 # feature network simple0 with conv layers
@@ -58,7 +56,7 @@ lidar-feat-simple-0:
 # feature network simple0 with bypassed conv layers
 lidar-feat-simple-1:
   dropout: 0.
-  fusion: cat # [cat, sub]
+  fusion: sub # [cat, sub]
   bypass: true
 
 # feature network pointseg
@@ -68,6 +66,29 @@ lidar-feat-pointseg:  # pointseg feature
   bypass: true
   fusion: cat # [cat, sub]
   part: "encoder" # [encoder, encoder+decoder]
+
+
+### IMU Feature Netowrks ###########################
+# IMU Feature Netowrks
+imu-feat-fc:  # FC
+  input-size: 6  # !fixed! do not chanage
+  hidden-size: [1024, 512, 256]
+  dropout: 0.
+
+imu-feat-rnn: # RNN
+  type: "lstm"
+  input-size: 6  # !fixed! do not chanage
+  hidden-size: 128
+  num-layers: 2
+  bidirectional: false
+  dropout: 0.
+
+### Fusion-Layer for DeepLIO Net ###########################
+fusion-layer-cat:
+  type: "cat" # [cat]
+
+fusion-layer-soft:
+  type: "soft" # [soft]
 
 ### Odometry Feature Netowrks ###########################
 # odometry feature network with fully connected layers
@@ -82,25 +103,6 @@ odom-feat-rnn:
   num-layers: 2
   bidirectional: true
   dropout: 0.
-
-### IMU Feature Netowrks ###########################
-# IMU Feature Netowrks
-imu-feat-fc:  # FC
-  input-size: 6  # !fixed! do not chanage
-  hidden-size: [1024, 512, 256]
-  dropout: 0.
-
-imu-feat-rnn: # RNN
-  type: "lstm"
-  input-size: 6  # !fixed! do not chanage
-  hidden-size: 128
-  num-layers: 2
-  bidirectional: true
-  dropout: 0.
-
-### Fusion-Layer for DeepLIO Net ###########################
-fusion-layer:
-  type: "cat" # [cat, soft-fusion]
 
 ### Loss Configurations ###########################
 losses:
@@ -119,9 +121,3 @@ losses:
 current-dataset: 'kitti'
 channels: [3, 4] # channesl: x=0, y=1, z=2, range(x,y,z)=3, remissions=4
 optimizer: 'adam'
-
-
-
-
-
-

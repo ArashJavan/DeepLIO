@@ -3,11 +3,11 @@ import os
 import torch
 
 from deeplio.common.logger import get_app_logger
-from .deeplio_nets import DeepLIO, DeepLIOFusionLayer
+from .deeplio_nets import DeepLIO
 from .imu_feat_nets import ImuFeatFC, ImufeatRNN0, ImuFeatRnn1
 from .lidar_feat_nets import LidarPointSegFeat, LidarSimpleFeat0, LidarSimpleFeat1
 from .odom_feat_nets import OdomFeatFC, OdomFeatRNN
-
+from .fusion_nets import DeepLIOFusionCat, DeepLIOFusionSoft
 net_logger = None
 
 
@@ -139,7 +139,8 @@ def create_imu_feat_net(cfg, arch_cfg, device):
 
 def create_fusion_net(input_shape, cfg, arch_cfg, device):
     # get fusion layer
-    feat_name = arch_cfg.get('fusion-net', None)
+    feat_cfg = arch_cfg.get('fusion-net', None)
+    feat_name = feat_cfg.get('name', None)
 
     if feat_name is None:
         return None
@@ -147,8 +148,13 @@ def create_fusion_net(input_shape, cfg, arch_cfg, device):
     feat_name = feat_name.lower()
 
     net_logger.info("creating deeplio fusion layer ({}).".format(feat_name))
-    # create feature net
-    feat_net = DeepLIOFusionLayer(input_shape, cfg[feat_name])
+
+    if feat_name == 'fusion-layer-cat':
+        feat_net = DeepLIOFusionCat(input_shape, cfg[feat_name])
+    elif feat_name == 'fusion-layer-soft':
+        feat_net = DeepLIOFusionSoft(input_shape, cfg[feat_name])
+    else:
+        raise ValueError("Wrong feature network {}".format(feat_name))
     return feat_net
 
 

@@ -92,43 +92,15 @@ class DeepLIO(BaseDeepLIO):
         return x_pos, x_ori
 
     def get_feat_networks(self):
-        feat_nets = [self.odom_feat_net, self.imu_feat_net, self.lidar_feat_net]
+        feat_nets = [self.odom_feat_net, self.fusion_net, self.imu_feat_net, self.lidar_feat_net]
         nets = []
         for feat_net in feat_nets:
-            if feat_net is not None:
+            if feat_net is not None and isinstance(feat_net, nn.Module):
                 m = feat_net.get_modules()
                 nets.extend(m)
         return nets
 
 
-class DeepLIOFusionLayer():
-    def __init__(self, input_shapes, cfg):
-        """
-        :param input_shapes: the inputshape of the layers of dim = [[BxN_0],...,[BxN_i]
-        :param cfg:
-        """
-        self.cfg_container = get_config_container()
-        self.seq_size = self.cfg_container.seq_size
-        self.combinations = self.cfg_container.combinations
-        self.type = cfg.get('type', 'cat').lower()
-        self.input_shapes = input_shapes
 
-        n = [input[2] for input in self.input_shapes]
-        self.output_shape = [1, self.seq_size, sum(n)]
-
-    def forward(self, x):
-        lidar_feat = x[0]
-        imu_feat = x[1]
-        if self.type == 'cat':
-            out = torch.cat((lidar_feat, imu_feat), dim=2)
-        else:
-            raise NotImplementedError()
-        return out
-
-    def get_output_shape(self):
-        return self.output_shape
-
-    def __call__(self, x):
-        return self.forward(x)
 
 

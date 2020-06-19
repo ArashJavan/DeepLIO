@@ -268,7 +268,8 @@ class FeatureNetSimple1(nn.Module):
 
         self.conv7 = nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1)
         self.bn7 = nn.BatchNorm2d(128)
-        self.pool7 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True)
+        # self.pool7 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True)
+        self.pool7 = nn.AdaptiveAvgPool2d((1, 1))
 
     def forward(self, x):
         # 1. block
