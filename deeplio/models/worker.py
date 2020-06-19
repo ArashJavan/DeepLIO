@@ -44,6 +44,7 @@ class Worker:
         self.ds_cfg = config_container.ds_cfg #  self.cfg['datasets']
         self.curr_dataset_cfg = config_container.curr_dataset_cfg #  self.cfg['datasets'][self.cfg['current-dataset']]
         self.seq_size = config_container.seq_size # self.ds_cfg['sequence-size']
+        self.seq_size_data = config_container.seq_size_data
         self.combinations = config_container.combinations # np.array(self.ds_cfg['combinations'])
         self.device = config_container.device
 

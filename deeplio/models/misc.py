@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from torch.optim.lr_scheduler import _LRScheduler
 
 from deeplio.common.spatial import inv_SE3, rotation_matrix_to_quaternion
 
@@ -18,11 +19,9 @@ class DataCombiCreater(object):
         has_imu = 'imus' in data
 
         if has_imgs:
-            n_batches = len(data['images'])
             res_imgs = data['images'].to(self.device)
-        else:
-            n_batches = len(data['imus'])
 
+        n_batches = len(data['gts'])
         for b in range(n_batches):
             gts = data['gts'][b]
             gts_local = self.process_ground_turth(gts)
@@ -82,6 +81,40 @@ class DataCombiCreater(object):
         return self.process(args)
 
 
+class PolynomialLRDecay(_LRScheduler):
+    """Polynomial learning rate decay until step reach to max_decay_step
+
+    Args:
+        optimizer (Optimizer): Wrapped optimizer.
+        max_decay_steps: after this step, we stop decreasing learning rate
+        end_learning_rate: scheduler stoping learning rate decay, value of learning rate must be this value
+        power: The power of the polynomial.
+    """
+    def __init__(self, optimizer, max_decay_steps, end_learning_rate=0.0001, power=1.0):
+        if max_decay_steps <= 1.:
+            raise ValueError('max_decay_steps should be greater than 1.')
+        self.max_decay_steps = max_decay_steps
+        self.end_learning_rate = end_learning_rate
+        self.power = power
+        super().__init__(optimizer)
+
+    def get_lr(self):
+        if self.last_epoch > self.max_decay_steps:
+            return [self.end_learning_rate for _ in self.base_lrs]
+
+        return [(base_lr - self.end_learning_rate) *
+                ((1 - self.last_epoch / self.max_decay_steps) ** (self.power)) +
+                self.end_learning_rate for base_lr in self.base_lrs]
+
+    def _get_closed_form_lr(self):
+        if self.last_epoch > self.max_decay_steps:
+            return [self.end_learning_rate for _ in self.base_lrs]
+
+        return [(base_lr - self.end_learning_rate) *
+                ((1 - self.last_epoch / self.max_decay_steps) ** (self.power)) +
+                self.end_learning_rate for base_lr in self.base_lrs]
+
+
 class ConfigContainer:
     """Class for holding config informations which can be used by NN-models
     """
@@ -94,6 +127,7 @@ class ConfigContainer:
         self.seq_size = len(self.combinations) # self.ds_cfg['sequence-size']
         self.device = self.args.device
         self.batch_size = self.args.batch_size
+        self.seq_size_data = self.ds_cfg['sequence-size']
 
 
 config_container = None

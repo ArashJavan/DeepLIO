@@ -1,21 +1,22 @@
 import os
 import shutil
 import time
+import yaml
 from pathlib import Path
 
 import numpy as np
+
 import torch
 import torch.utils.data
-import yaml
-from pytorch_model_summary import summary
-from torch import optim
 from torchvision.utils import make_grid
+
+from pytorch_model_summary import summary
 
 from deeplio import datasets as ds
 from deeplio.common import spatial, utils
 from deeplio.losses import get_loss_function
 from deeplio.models import nets
-from deeplio.models.misc import DataCombiCreater
+from deeplio.models.misc import DataCombiCreater, PolynomialLRDecay
 from .optimizer import create_optimizer
 from .worker import Worker, AverageMeter, ProgressMeter, worker_init_fn
 
@@ -48,8 +49,7 @@ class Trainer(Worker):
                                     cfg=self.cfg, device=self.device)
 
         self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
-        self.lr_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(self.optimizer,
-                                                                      self.lr_adjuster)
+        self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=100, end_learning_rate=0.00005, power=1.0)
         self.criterion = get_loss_function(self.cfg, args.device)
 
         self.has_lidar = True if self.model.lidar_feat_net is not None else False
@@ -195,6 +195,18 @@ class Trainer(Worker):
 
             if self.data_last is None:
                 self.data_last = data
+
+            # if self.has_imu:
+            #     idx_invalid = np.where(np.sum(np.array(data["valids"]), axis=1) != self.seq_size_data)[0]
+            #     if len(idx_invalid) > 0:
+            #         try:
+            #             data['imus'] = [data['imus'][x] for x in range(len(data['gts'])) if x not in idx_invalid]
+            #             data['valids'] = [data['valids'][x] for x in range(len(data['gts'])) if x not in idx_invalid]
+            #             data['metas'] = [data['metas'][x] for x in range(len(data['gts'])) if x not in idx_invalid]
+            #             data['gts'] = data['gts'][[x for x in range(len(data['gts'])) if x not in idx_invalid]]
+            #         except IndexError as ex:
+            #             self.logger.warning("{} (idx-inv={}, len={})".format(str(ex), idx_invalid, len(data['gts'])))
+            #             continue
 
             # measure data loading time
             data_time.update(time.time() - end)

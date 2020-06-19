@@ -60,6 +60,9 @@ class Tester(Worker):
                                     cfg=self.cfg, device=self.device)
         self.criterion = get_loss_function(self.cfg, args.device)
 
+        self.has_lidar = True if self.model.lidar_feat_net is not None else False
+        self.has_imu = True if self.model.imu_feat_net is not None else False
+
         self.tensor_writer = tensorboard.SummaryWriter(log_dir=self.runs_dir)
 
         # debugging and visualizing
