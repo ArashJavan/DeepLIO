@@ -110,14 +110,15 @@ class Tester(Worker):
                     return 0
 
                 # prepare data
-                imgs, imus, gts_local = self.data_permuter(data)
+                imgs, untrans_imgs, imus, gts_local, gts_global = self.data_permuter(data)
 
                 # prepare ground truth tranlational and rotational part
                 gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
                 gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
 
                 # compute model predictions and loss
-                pred_x, pred_q, loss = self.eval_model_and_loss(imgs, imus, gt_local_x, gt_local_q)
+                pred_x, pred_q = self.model([imgs, imus])
+                loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), len(pred_x))

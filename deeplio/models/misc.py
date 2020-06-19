@@ -12,14 +12,17 @@ class DataCombiCreater(object):
 
     def process(self, data):
         res_imgs = []
+        res_untrans_imgs = []
         res_imu = []
         res_gt_local = []
+        res_gt_global = []
 
         has_imgs = 'images' in data
         has_imu = 'imus' in data
 
         if has_imgs:
             res_imgs = data['images'].to(self.device)
+            res_untrans_imgs = data['untrans-images'].to(self.device)
 
         n_batches = len(data['gts'])
         for b in range(n_batches):
@@ -34,8 +37,9 @@ class DataCombiCreater(object):
                 res_imu.append(res)
                 #res_imu = [torch.stack(imu).to(self.device, non_blocking=True) for imu_seq in res_imu for imu in imu_seq]
 
+        res_gt_global = data['gts'].to(self.device)
         res_gt_local = torch.stack(res_gt_local).to(self.device, non_blocking=True)
-        return res_imgs, res_imu, res_gt_local
+        return res_imgs, res_untrans_imgs, res_imu, res_gt_local, res_gt_global
 
     def process_imus(self, imus):
         imu_seq = []

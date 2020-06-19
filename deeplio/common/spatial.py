@@ -461,6 +461,70 @@ def quaternion_to_angle_axis(quaternion: torch.Tensor) -> torch.Tensor:
     return angle_axis
 
 
+def quaternion_to_euler(quaternion: torch.Tensor) -> torch.Tensor:
+    """Convert quaternion vector to euler angles.
+    The quaternion should be in (x, y, z, w) format.
+    """
+    if not torch.is_tensor(quaternion):
+        raise TypeError("Input type is not a torch.Tensor. Got {}".format(
+            type(quaternion)))
+
+    if not quaternion.shape[-1] == 4:
+        raise ValueError(
+            "Input must be a tensor of shape Nx4 or 4. Got {}".format(
+                quaternion.shape))
+    # unpack input and compute conversion
+    x: torch.Tensor = quaternion[..., 0]
+    y: torch.Tensor = quaternion[..., 1]
+    z: torch.Tensor = quaternion[..., 2]
+    w: torch.Tensor = quaternion[..., 3]
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = torch.atan2(sinr_cosp, cosr_cosp)
+
+    sinp = 2.0 * (w * y - z * x)
+    pitch = torch.where(torch.abs(sinp) > 1.0, pi/2. * torch.sign(sinp), torch.asin(sinp))
+
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = torch.atan2(siny_cosp, cosy_cosp)
+    euler = torch.stack([roll, pitch, yaw], dim=1)
+    return euler
+
+
+def euler_to_quaternion(euler: torch.Tensor) -> torch.Tensor:
+    """Convert quaternion vector to euler angles.
+    The quaternion should be in (roll, pitch, yaw) format.
+    """
+    if not torch.is_tensor(euler):
+        raise TypeError("Input type is not a torch.Tensor. Got {}".format(
+            type(euler)))
+
+    if not euler.shape[-1] == 3:
+        raise ValueError(
+            "Input must be a tensor of shape Nx4 or 4. Got {}".format(
+                euler.shape))
+    # unpack input and compute conversion
+    roll: torch.Tensor = euler[..., 0]
+    pitch: torch.Tensor = euler[..., 1]
+    yaw: torch.Tensor = euler[..., 2]
+
+    cy = torch.cos(yaw * 0.5)
+    sy = torch.sin(yaw * 0.5)
+    cp = torch.cos(pitch * 0.5)
+    sp = torch.sin(pitch * 0.5)
+    cr = torch.cos(roll * 0.5)
+    sr = torch.sin(roll * 0.5)
+
+    w = cr * cp * cy + sr * sp * sy
+    x = sr * cp * cy - cr * sp * sy
+    y = cr * sp * cy + sr * cp * sy
+    z = cr * cp * sy - sr * sp * cy
+
+    q = torch.stack([x, y, z, w]).T
+    return q
+
+
 def quaternion_log_to_exp(quaternion: torch.Tensor,
                           eps: float = 1e-8) -> torch.Tensor:
     r"""Applies exponential map to log quaternion.
