@@ -49,7 +49,7 @@ class Trainer(Worker):
                                     cfg=self.cfg, device=self.device)
 
         self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
-        self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=100, end_learning_rate=0.00005, power=2.0)
+        self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=self.epochs, end_learning_rate=0.00005, power=2.0)
         self.criterion = get_loss_function(self.cfg, args.device)
 
         self.has_lidar = True if self.model.lidar_feat_net is not None else False

@@ -64,8 +64,8 @@ class DeepLIOFusionSoft(BaseNet):
         imu_feat = x[1]
 
         cat_feat = torch.cat((lidar_feat, imu_feat), dim=2)
-        s1_feat = F.sigmoid(self.layers[0](cat_feat))
-        s2_feat = F.sigmoid(self.layers[1](cat_feat))
+        s1_feat = torch.sigmoid(self.layers[0](cat_feat))
+        s2_feat = torch.sigmoid(self.layers[1](cat_feat))
 
         lidar_feat *= s1_feat
         imu_feat *= s2_feat
