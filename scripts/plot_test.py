@@ -77,9 +77,9 @@ def plot_from_csvs(csvs, suffix='pred_x'):
     ax_loss.set_ylabel('loss')
 
     for i, csv in enumerate(csvs):
-        test_nr = tests_idx[i] # int(csv.split('/')[-2].split('_')[0])
+        test_nr = i # tests_idx[i] # int(csv.split('/')[-2].split('_')[0])
         traj = np.loadtxt(csv, delimiter=',')
-
+        test_lbl = Path(csv).parent.parent.name
         T_glob_pred = traj[:, 1:17].reshape(-1, 4, 4)
         T_glob_gt = traj[:, 17:33].reshape(-1, 4, 4)
         losses = traj[:, 33]
@@ -89,11 +89,11 @@ def plot_from_csvs(csvs, suffix='pred_x'):
             #ax_map.scatter(T_glob_gt[:, 0, 3], T_glob_gt[:, 1, 3], alpha=0.5, s=0.1)
         if test_nr not in map_exclude:
             ax_map.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], colors[test_nr-1], alpha=0.8, linewidth=1,
-                        label='Test {}'.format(test_nr))
+                        label='Test {}'.format(test_lbl))
             #ax_map.scatter(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, s=0.1)
 
         if test_nr not in loss_exclude:
-            ax_loss.plot(range(len(losses)), losses, colors[test_nr-1], alpha=1, linewidth=1, label='Test {}'.format(test_nr),
+            ax_loss.plot(range(len(losses)), losses, colors[test_nr-1], alpha=1, linewidth=1, label='Test {}'.format(test_lbl),
                        )
             #ax_loss.scatter(range(len(losses)), losses, alpha=0.5, s=0.1)
 
@@ -105,10 +105,13 @@ def plot_from_csvs(csvs, suffix='pred_x'):
     plt.close(fig_map)
     plt.close(fig_loss)
 
-maps = ['2011_09_26_0023',
+maps = ['2011_10_03_0027',
+        '2011_10_03_0034',
         '2011_09_30_0016',
-        '2011_09_30_0027']
-
+        '2011_09_30_0018',
+        '2011_09_30_0033',
+        '2011_09_30_0034'
+        ]
 
 csv_pathes = list(Path("{}/outputs".format(content_dir)).rglob('*.csv'))
 csv_pathes = np.array([str(csv) for csv in csv_pathes])
@@ -123,3 +126,4 @@ for map in maps:
     csv_map_x = csvs_map[['x' in csv and 'xq' not in csv for csv in csvs_map]]
     plot_from_csvs(csv_map_x, suffix='pred_x')
     plot_from_csvs(csv_map_xq, suffix='pred_xq')
+print("done!")
