@@ -328,7 +328,15 @@ class Kitti(data.Dataset):
         ct, cl = self.crop_top, self.crop_left
         mean = torch.as_tensor(self.mean_img)
         std = torch.as_tensor(self.std_img)
-        imgs_normalized = [torch.from_numpy(img[ct:-ct, cl:-cl, :].transpose(2, 0, 1)) for img in self.images]
+        if ct > 0 and cl == 0:
+            imgs_normalized = [torch.from_numpy(img[ct:-ct, :, :].transpose(2, 0, 1)) for img in self.images]
+        elif ct > 0 and cl >  0:
+            imgs_normalized = [torch.from_numpy(img[ct:-ct, cl:-cl, :].transpose(2, 0, 1)) for img in self.images]
+        elif ct == 0 and cl > 0:
+            imgs_normalized = [torch.from_numpy(img[:, cl:-cl, :].transpose(2, 0, 1)) for img in self.images]
+        else:
+            imgs_normalized = [torch.from_numpy(img.transpose(2, 0, 1)) for img in self.images]
+
         imgs_normalized = torch.stack(imgs_normalized)
         if self.inv_depth:
             im_depth = imgs_normalized[:, 3]
