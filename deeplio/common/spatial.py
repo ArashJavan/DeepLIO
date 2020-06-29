@@ -659,6 +659,41 @@ def angle_axis_to_quaternion(angle_axis: torch.Tensor) -> torch.Tensor:
     return torch.cat([w, quaternion], dim=-1)
 
 
+def rotation_matrix_log_to_exp(omega, eps=1e-8):
+    """
+    :param omega: Axis-angle, Nx3
+    :return: Rotation matrix, Nx3x3
+    """
+    dev = omega.device
+    assert omega.shape[1] == 3
+    bs = omega.shape[0]
+    theta = torch.sqrt(torch.sum(torch.pow(omega, 2), 1, keepdim=True))
+    cos_theta = torch.cos(theta).unsqueeze(-1)
+    sin_theta = torch.sin(theta).unsqueeze(-1)
+    eye = torch.unsqueeze(torch.eye(3), 0).repeat(bs, 1, 1).to(dev)
+    norm_r = omega / (theta + eps)
+    r_1 = torch.unsqueeze(norm_r, 2)  # N, 3, 1
+    r_2 = torch.unsqueeze(norm_r, 1)  # N, 1, 3
+    zero_col = torch.zeros(bs, 1).to(dev)
+    skew_sym = torch.cat([zero_col, -norm_r[:, 2:3], norm_r[:, 1:2], norm_r[:, 2:3], zero_col,
+                          -norm_r[:, 0:1], -norm_r[:, 1:2], norm_r[:, 0:1], zero_col], 1)
+    skew_sym = skew_sym.contiguous().view(bs, 3, 3)
+    R = cos_theta*eye + (1-cos_theta)*torch.bmm(r_1, r_2) + sin_theta*skew_sym
+    return R
+
+
+def rotation_matrix_exp_to_log(R):
+    """
+    :param R: Rotation matrix, Nx3x3
+    :return: r: Rotation vector, Nx3
+    """
+    assert R.shape[1] == R.shape[2] == 3
+    theta = torch.acos(torch.clamp((R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2] - 1) / 2, min=-1., max=1.)).view(-1, 1)
+    r = torch.stack((R[:, 2, 1]-R[:, 1, 2], R[:, 0, 2]-R[:, 2, 0], R[:, 1, 0]-R[:, 0, 1]), 1) / (2*torch.sin(theta))
+    r_norm = r / torch.sqrt(torch.sum(torch.pow(r, 2), 1, keepdim=True))
+    return theta * r_norm
+
+
 # based on:
 # https://github.com/ClementPinard/SfmLearner-Pytorch/blob/master/inverse_warp.py#L65-L71
 

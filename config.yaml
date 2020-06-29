@@ -1,6 +1,6 @@
 datasets:
-  sequence-size: 1 # must be >= 1
-  combinations: [[0, 1]] # [[0, 1], [1, 2]]
+  sequence-size: 2 # must be >= 1
+  combinations: [[0, 1], [1, 2]]
   kitti:
     root-path-sync: "datasets/KITTI/sync"
     root-path-unsync: "datasets/KITTI/extract"
@@ -35,10 +35,10 @@ datasets:
 ### DeepLIO Network ##############################
 deeplio:
   dropout: 0.25
-  pretrained: true
-  model-path: "outputs/train_deeplio_20200629_144120/cpkt_deeplio.tar"
+  pretrained: false
+  model-path: ""
   lidar-feat-net:
-    name: "lidar-feat-simple-1"
+    name: "lidar-feat-pointseg"
     pretrained: false
     model-path: ""
   imu-feat-net:

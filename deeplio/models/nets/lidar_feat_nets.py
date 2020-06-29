@@ -48,14 +48,13 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         self.part = cfg['part'].lower()
         self.bn_d = bn_d
 
-        self.encoder1 = PSEncoder(input_shape, cfg)
-        self.encoder2 = PSEncoder(input_shape, cfg)
+        c, h, w = self.input_shape
+
+        self.encoder1 = PSEncoder((2*c, h, w), cfg)
+        self.encoder2 = PSEncoder((2*c, h, w), cfg)
 
         # shapes of  x_1a, x_1b, x_se1, x_se2, x_se3, x_el
         enc_out_shapes = self.encoder1.get_output_shape()
-        if self.part == 'encoder+decoder':
-            self.decoder = PSDecoder(enc_out_shapes, cfg)
-            dec_out_shape = self.decoder.get_output_shape()
 
         # number of output channels in encoder
         b, c, h, w = enc_out_shapes[4]
@@ -84,12 +83,14 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         mask0: predicted mask to each time sequence
         """
         imgs_xyz, imgs_normals = x[0], x[1]
-        batch_size = imgs_xyz.shape[0]
+        b, s, t, c, h, w = imgs_xyz.shape
+        imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
+        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
 
-        x_1a_0, x_1b_0, x_se1_0, x_se2_0, x_se3_0, x_el_0 = self.encoder(imgs_xyz)
+        x_1a_0, x_1b_0, x_se1_0, x_se2_0, x_se3_0, x_el_0 = self.encoder1(imgs_xyz)
         x_feat_0 = x_se3_0
 
-        x_1a_1, x_1b_1, x_se1_1, x_se2_1, x_se3_1, x_el_1 = self.encoder(imgs_normals)
+        x_1a_1, x_1b_1, x_se1_1, x_se2_1, x_se3_1, x_el_1 = self.encoder2(imgs_normals)
         x_feat_1 = x_se3_1
 
         if self.fusion == 'cat':
@@ -106,7 +107,7 @@ class LidarPointSegFeat(BaseLidarFeatNet):
             x = self.drop(x)
 
         # reshape output to BxTxCxHxW
-        x = x.view(batch_size, self.seq_size, num_flat_features(x, 1))
+        x = x.view(b, s, num_flat_features(x, 1))
         return x
 
 

@@ -61,7 +61,8 @@ class Trainer(Worker):
                                                             num_workers=self.num_workers,
                                                             shuffle=True,
                                                             worker_init_fn=worker_init_fn,
-                                                            collate_fn=ds.deeplio_collate)
+                                                            collate_fn=ds.deeplio_collate,
+                                                            drop_last=True)
 
         self.val_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='validation',
                                     has_imu=self.has_imu, has_lidar=self.has_lidar)
@@ -69,7 +70,8 @@ class Trainer(Worker):
                                                           num_workers=self.num_workers,
                                                           shuffle=True,
                                                           worker_init_fn=worker_init_fn,
-                                                          collate_fn = ds.deeplio_collate)
+                                                          collate_fn = ds.deeplio_collate,
+                                                          drop_last=True)
 
         self.data_permuter = DataCombiCreater(combinations=self.combinations,
                                               device=self.device)
