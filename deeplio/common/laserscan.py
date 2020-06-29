@@ -184,7 +184,8 @@ class LaserScan:
         self.proj_idx[proj_y, proj_x] = indices
         self.proj_mask = (self.proj_idx > 0).astype(np.int32)
 
-    def do_normal_projection(self):
+
+    def do_normal_projection1(self):
         # projected range image - [H,W] range (-1 is no data)
         self.proj_normals = np.full((self.proj_H, self.proj_W, 3), 0., dtype=np.float32)
 
@@ -211,4 +212,38 @@ class LaserScan:
         self.proj_normals[proj_y, proj_x] = normals
         return self.proj_normals
 
+    def do_normal_projection(self):
+        """
+
+        :param img: dim=(HxWxC)
+        :return:
+        """
+        img = np.dstack((self.proj_xyz, self.proj_range))
+
+        def calc_weights(x, alpha=-0.8):
+            return np.exp(alpha * np.abs(x))
+
+        diff_vertical = img[:-1, :, :] - img[1:, :, :]
+        diff_horizontal = img[:, :-1, :] - img[:, 1:, :]
+
+        x_diff_top = diff_vertical[:-1, 1:-1, :]
+        x_diff_bottom = -diff_vertical[1:, 1:-1, :]
+
+        x_diff_left = diff_horizontal[1:-1, :-1, :]
+        x_diff_right = -diff_horizontal[1:-1, 1:, :]
+
+        x_range_diffs = np.stack((x_diff_top[:, :, -1], x_diff_left[:, :, -1], x_diff_bottom[:, :, -1], x_diff_right[:, :, -1]), axis=2)
+        weights = calc_weights(x_range_diffs)
+
+        x_norm_tl = np.cross(weights[..., 0:1] * x_diff_top[..., :3], weights[..., 1:2] * x_diff_left[..., :3])
+        x_norm_lb = np.cross(weights[..., 1, None] * x_diff_left[..., :3], weights[..., 2, None] * x_diff_bottom[..., :3])
+        x_norm_br = np.cross(weights[..., 2, None] * x_diff_bottom[..., :3], weights[..., 3, None] * x_diff_right[..., :3])
+        x_norm_rt = np.cross(weights[..., 3, None] * x_diff_right[..., :3], weights[..., 0, None] * x_diff_top[..., :3])
+
+        self.proj_normal = np.stack((x_norm_tl, x_norm_lb, x_norm_br, x_norm_rt))
+        self.proj_normal = np.sum(self.proj_normal, axis=0)
+        # normalizing normals
+        self.proj_normal /= (np.linalg.norm(self.proj_normal, axis=2, keepdims=True) + 1e-8)
+        self.proj_normal = np.pad(self.proj_normal, ((1,1),(1, 1),(0, 0)))
+        return self.proj_normal
 

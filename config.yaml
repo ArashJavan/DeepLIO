@@ -1,37 +1,42 @@
 datasets:
-  sequence-size: 2 # must be >= 1
-  combinations: [[0, 1], [0, 2], [1, 2]]
+  sequence-size: 1 # must be >= 1
+  combinations: [[0, 1]] # [[0, 1], [1, 2]]
   kitti:
     root-path-sync: "datasets/KITTI/sync"
     root-path-unsync: "datasets/KITTI/extract"
     image-width: 1080
     image-height: 64
-    crop-factors: [4, 24] # [0, 4] # top, left
+    crop-factors: [0, 24] # [0, 4] # top, left
     fov-up: 3.
     fov-down: -25.
     max-depth: 80.
     min-depth: 1.
     inverse-depth: true
     train:
-      2011-10-03: [27, 42, 34]
-      2011-09-30: [16, 18, 20, 27, 28]
+      #2011-10-03: [27, 42, 34]
+      #2011-09-30: [16, 18, 20, 27, 28]
+      2011-09-30: [16]
     test:
-      2011-10-03: [27, 42, 34]
-      2011-09-30: [16, 33, 34]
+      #2011-10-03: [27, 42, 34]
+      #2011-09-30: [16, 33, 34]
+      2011-09-30: [16]
     validation:
-      2011-09-26: [23, 39]
+      #2011-09-26: [23, 39]
+      2011-09-30: [16]
 
-    # channesl: x, y, z, range(x,y,z), remissions)
-    mean-image: [-0.05815, 0.4165, -0.8585, 0.1029, 0.2164]
-    std-image: [10.0366, 7.4936, 0.8761, 0.0857, 0.1740]
-    mean-imu: [-0.0635, 0.186, 9.7966, 0., 0.0005, 0.0082]
-    std-imu: [0.8525, 0.9516, 0.3401, 0.0198, 0.02204, 0.1383]
+    # channesl: x, y, z, remission, nx, ny ,nz, range)
+    mean-image: [-0.0124, 0.3444, -0.9382, 0.236, -0.0022, 0.0046, 0.4149, 0.1178]
+    std-image: [8.7207, 6.8577, 0.8232, 0.1719, 0.3388, 0.441, 0.5708, 0.0873]
+
+    mean-imu: [-0.0685, 0.1672, 9.7967, -0., 0.0006, 0.0059]
+    std-imu: [0.8766, 0.9528, 0.3471, 0.0204, 0.0227, 0.1412]
+
 
 ### DeepLIO Network ##############################
 deeplio:
   dropout: 0.25
-  pretrained: false
-  model-path: ""
+  pretrained: true
+  model-path: "outputs/train_deeplio_20200629_144120/cpkt_deeplio.tar"
   lidar-feat-net:
     name: "lidar-feat-simple-1"
     pretrained: false
@@ -41,7 +46,7 @@ deeplio:
     pretrained: false
     model-path: ""
   odom-feat-net:
-    name: "odom-feat-fc"
+    name: "odom-feat-rnn"
     pretrained: false
     model-path: ""
   fusion-net:
@@ -51,12 +56,12 @@ deeplio:
 # feature network simple0 with conv layers
 lidar-feat-simple-0:
   dropout: 0.
-  fusion: cat # [cat, sub]
+  fusion: add # [cat, sub, add]
 
 # feature network simple0 with bypassed conv layers
 lidar-feat-simple-1:
   dropout: 0.
-  fusion: sub # [cat, sub]
+  fusion: add # [cat, sub, add]
   bypass: true
 
 # feature network pointseg
@@ -64,7 +69,7 @@ lidar-feat-pointseg:  # pointseg feature
   dropout: 0.
   classes: ['unknown', 'object']
   bypass: true
-  fusion: cat # [cat, sub]
+  fusion: add # [cat, sub, add]
   part: "encoder" # [encoder, encoder+decoder]
 
 
@@ -106,11 +111,11 @@ odom-feat-rnn:
 
 ### Loss Configurations ###########################
 losses:
-  active: 'lwsloss'
+  active: 'hwsloss'
   hwsloss:
     params:
       learn: true
-      sx: 0.
+      sx: 1.
       sq: -2.5
   lwsloss:
     params:
@@ -119,5 +124,5 @@ losses:
     params:
 
 current-dataset: 'kitti'
-channels: [3, 4] # channesl: x=0, y=1, z=2, range(x,y,z)=3, remissions=4
+channels: [0, 1, 2, 4, 5, 6]  # channesl: x, y, z, remission, nx, ny. nz range
 optimizer: 'adam'

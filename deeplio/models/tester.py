@@ -110,15 +110,29 @@ class Tester(Worker):
                     return 0
 
                 # prepare data
-                imgs, untrans_imgs, imus, gts_local, gts_global = self.data_permuter(data)
+                self.data_permuter(data)
+                imgs = self.data_permuter.res_imgs
+                normals = self.data_permuter.res_normals
+                imus = self.data_permuter.res_imu
+                imgs_org = self.data_permuter.res_img_org
+                normals_org = self.data_permuter.res_normals_org
+                gts_f2f = self.data_permuter.res_gt_f2f
+                gts_f2g = self.data_permuter.res_gt_f2g
+                gts_global = self.data_permuter.res_gt_global
 
                 # prepare ground truth tranlational and rotational part
-                gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
-                gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
+                gt_f2f_x = gts_f2f[:, :, 0:3]
+                gt_f2f_q = gts_f2f[:, :, 3:7]
 
                 # compute model predictions and loss
-                pred_x, pred_q = self.model([imgs, imus])
-                loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+                pred_x, pred_q = self.model([[imgs, normals], imus])
+                b, s, _ = pred_x.shape
+                loss = self.criterion(pred_x.view(b * s, -1), pred_q.view(b * s, -1), gt_f2f_x.view(b * s, -1),
+                                      gt_f2f_q.view(b * s, -1))
+                pred_x = pred_x.view(b * s, -1)
+                pred_q = pred_q.view(b * s, -1)
+                gt_f2f_x = gt_f2f_x.view(b * s, -1)
+                gt_f2f_q = gt_f2f_q.view(b * s, -1)
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), len(pred_x))
@@ -154,8 +168,8 @@ class Tester(Worker):
                 T_glob[:3, 3] = gt_global[1, 0:3]  # t
                 T_glob[:3, :3] = gt_global[1, 3:12].reshape(3, 3) # R
 
-                gt_x = gt_local_x.detach().cpu().squeeze()
-                gt_q = gt_local_q.detach().cpu().squeeze()
+                gt_x = gt_f2f_x.detach().cpu().squeeze()
+                gt_q = gt_f2f_q.detach().cpu().squeeze()
                 pred_x = pred_x.detach().cpu().squeeze()
                 pred_q = pred_q.detach().cpu().squeeze()
 

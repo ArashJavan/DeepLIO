@@ -63,37 +63,48 @@ def main(args):
 
     # Iterate through datset and save images
     for idx, data in enumerate(dataloader):
-        ims = data['images'].detach().cpu()
+        ims = data['untrans-images'].detach().cpu()
         for b in range(len(ims)):
             metas = data['metas'][b]
             index = metas['index'][0]
             date = metas['date'][0]
             drive = metas['drive'][0]
 
-            ims_batch = ims[b]
-            ims_depth = [F.pad(im, (0, 0, 10, 0)) for im in ims_batch[:, 0, :, :]]
-            ims_depth = torch.cat(ims_depth, dim=0)
+            imgs_batch = ims[b, :, 0:3, :, :]
+            #imgs_depth = torch.norm(imgs_batch, p=2, dim=1)
+            #ims_depth = [F.pad(im, (0, 0, 10, 0)) for im in imgs_depth]
+            #ims_depth = torch.cat(ims_depth, dim=0)
+            #imgs_xyz = torch.norm(imgs_batch, p=2, dim=1)
+            ims_xyz = [F.pad(im, (0, 0, 10, 0)) for im in imgs_batch]
+            ims_xyz = torch.cat(ims_xyz, dim=1)
+            ims_xyz = torch.abs(ims_xyz.permute(1,2, 0))
 
-            ims_remission = [F.pad(im, (0, 0, 10, 0)) for im in ims_batch[:, 1, :, :]]
-            ims_remission = torch.cat(ims_remission, dim=0)
+            imgs_normals = ims[b, :, 3:, :, :]
+            #imgs_normals = torch.norm(imgs_normals, p=1, dim=1)
+            imgs_normals = [F.pad(im, (0, 0, 10, 0)) for im in imgs_normals]
+            imgs_normals = torch.cat(imgs_normals, dim=1)
+            imgs_normals = imgs_normals.permute(1,2, 0)
 
             fig, ax = plt.subplots(3, 1, figsize=(15, 7))
-            ax[0].set_title("Depth, mean:{:.4f}, std:{:.4f}".format(ims_depth.mean(), ims_depth.std()), fontsize=5)
+            ax[0].set_title("XYZ, mean:{:.4f}, std:{:.4f}".format(ims_xyz.mean(), ims_xyz.std()), fontsize=5)
             ax[0].axis('off')
-            ax[0].imshow(ims_depth)
+            imd = ax[0].imshow(torch.abs(ims_xyz) / ims_xyz.max())
+            #fig.colorbar(imd, ax=ax[0])
 
-            ax[1].set_title("Remission, mean:{:.4f}, std:{:.4f}".format(ims_remission.mean(), ims_remission.std()),
-                            fontsize=5)
-            ax[1].imshow(ims_remission)
+            ax[1].set_title("Normal, mean:{:.4f}, std:{:.4f}".format(imgs_normals.mean(), imgs_normals.std()), fontsize=5)
+            imn = ax[1].imshow((imgs_normals + 1.) / 2.)
             ax[1].axis('off')
+            #fig.colorbar(imn, ax=ax[1])
 
-            ax[2].hist(ims_depth.flatten(), bins=50, alpha=0.5, label="depth", density=True)
-            ax[2].hist(ims_remission.flatten(), bins=50, alpha=0.5, label="remission", density=True)
+            ax[2].hist(ims_xyz.flatten(), bins=50, alpha=0.5, label="xyz", density=True)
+            ax[2].hist(imgs_normals.flatten(), bins=50, alpha=0.5, label="normals", density=True)
             ax[2].legend()
 
             fname = "{}/{}_{}_{}_{}.png".format(OUTPUT_PATH, idx, index, date, drive)
             #logger.info("saving {}.".format(fname))
-            fig.savefig(fname, dpi=300)
+
+            fig.tight_layout()
+            fig.savefig(fname, dpi=600)
             plt.close(fig)
 
         pbar.update(1)

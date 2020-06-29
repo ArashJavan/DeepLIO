@@ -206,15 +206,24 @@ class Trainer(Worker):
             data_time.update(time.time() - end)
 
             # prepare data
-            imgs, untrans_imgs, imus, gts_local, gts_global = self.data_permuter(data)
+            self.data_permuter(data)
+            imgs = self.data_permuter.res_imgs
+            normals = self.data_permuter.res_normals
+            imus = self.data_permuter.res_imu
+            imgs_org = self.data_permuter.res_img_org
+            normals_org = self.data_permuter.res_normals_org
+            gts_f2f = self.data_permuter.res_gt_f2f
+            gts_f2g = self.data_permuter.res_gt_f2g
+            gts_global = self.data_permuter.res_gt_global
 
             # prepare ground truth tranlational and rotational part
-            gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
-            gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
+            gt_f2f_x = gts_f2f[:, :, 0:3].view(-1, 3)
+            gt_f2f_q = gts_f2f[:, :, 3:7].view(-1, 4)
 
             # compute model predictions and loss
-            pred_x, pred_q = self.model([imgs, imus])
-            loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+            pred_x, pred_q = self.model([[imgs, normals], imus])
+            b, s, _ = pred_x.shape
+            loss = self.criterion(pred_x.view(b*s, -1), pred_q.view(b*s, -1), gt_f2f_x.view(b*s, -1), gt_f2f_q.view(b*s, -1))
 
             # measure accuracy and record loss
             losses.update(loss.detach().item(), len(pred_x))
@@ -236,8 +245,8 @@ class Trainer(Worker):
                     # print some prediction results
                     x = pred_x[0:2].detach().cpu().flatten()
                     q = spatial.normalize_quaternion(pred_q[0:2].detach().cpu()).flatten()
-                    x_gt = gt_local_x[0:2].detach().cpu().flatten()
-                    q_gt = gt_local_q[0:2].detach().cpu().flatten()
+                    x_gt = gt_f2f_x[0:2].detach().cpu().flatten()
+                    q_gt = gt_f2f_q[0:2].detach().cpu().flatten()
 
                     self.logger.print("x-hat: [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]"
                                       "\nx-gt:  [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]".
@@ -303,15 +312,25 @@ class Trainer(Worker):
                     return 0
 
                 # prepare data
-                imgs, untrans_imgs, imus, gts_local, gts_global = self.data_permuter(data)
+                self.data_permuter(data)
+                imgs = self.data_permuter.res_imgs
+                normals = self.data_permuter.res_normals
+                imus = self.data_permuter.res_imu
+                imgs_org = self.data_permuter.res_img_org
+                normals_org = self.data_permuter.res_normals_org
+                gts_f2f = self.data_permuter.res_gt_f2f
+                gts_f2g = self.data_permuter.res_gt_f2g
+                gts_global = self.data_permuter.res_gt_global
 
                 # prepare ground truth tranlational and rotational part
-                gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
-                gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
+                gt_f2f_x = gts_f2f[:, :, 0:3].view(-1, 3)
+                gt_f2f_q = gts_f2f[:, :, 3:7].view(-1, 4)
 
                 # compute model predictions and loss
-                pred_x, pred_q = self.model([imgs, imus])
-                loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+                pred_x, pred_q = self.model([[imgs, normals], imus])
+                b, s, _ = pred_x.shape
+                loss = self.criterion(pred_x.view(b * s, -1), pred_q.view(b * s, -1), gt_f2f_x.view(b * s, -1),
+                                      gt_f2f_q.view(b * s, -1))
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), len(pred_x))
@@ -353,11 +372,11 @@ class TrainerDeepLIO(Trainer):
         # log the network structure and number of params
         # log the network structure and number of params
         self.logger.info("{}: Network architecture:".format(self.model.name))
-        lidar_data = torch.randn((1, self.seq_size+1, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
-        imu_data = torch.rand((1, self.seq_size, 2, 6)).to(self.device)
+        xyz_data = torch.randn((self.batch_size, self.seq_size, self.timestamps, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
+        normal_data =  xyz_data
+        imu_data = torch.rand((self.batch_size,  self.seq_size, 10, 6)).to(self.device)
         self.model.eval()
-        self.logger.print(summary(self.model, [lidar_data, imu_data]))
-
+        self.logger.print(summary(self.model, [[xyz_data, normal_data], imu_data]))
 
     def post_train_iter(self):
         if self.has_lidar:

@@ -67,16 +67,19 @@ class KittiRawData:
         return utils.load_velo_scan(self.velo_files[idx])
 
     def get_velo_image(self, idx):
-        scan = LaserScan(project=True, H=self.image_height, W=self.image_width, fov_up=self.fov_up, fov_down=self.fov_down,
+        scan = LaserScan(project=False, H=self.image_height, W=self.image_width, fov_up=self.fov_up, fov_down=self.fov_down,
                          min_depth=self.min_depth, max_depth=self.max_depth)
         scan.open_scan(self.velo_files[idx])
+        scan.do_range_projection()
+        scan.do_normal_projection()
 
         # get projected data
         proj_xyz = scan.proj_xyz
         proj_remission = scan.proj_remission
         proj_range = scan.proj_range
+        proj_normal = scan.proj_normal
 
-        image = np.dstack((proj_xyz, proj_range, proj_remission))
+        image = np.dstack((proj_xyz, proj_remission, proj_normal, proj_range))
         return image
 
     def get_imu_values(self, idx):
@@ -324,17 +327,23 @@ class Kitti(data.Dataset):
 
     def transform_images(self):
         imgs_org = torch.stack([torch.from_numpy(im.transpose(2, 0, 1)) for im in self.images])
+        imgs_org = imgs_org[:, self.channels]
 
         ct, cl = self.crop_top, self.crop_left
         mean = torch.as_tensor(self.mean_img)
         std = torch.as_tensor(self.std_img)
-        imgs_normalized = [torch.from_numpy(img[ct:-ct, cl:-cl, :].transpose(2, 0, 1)) for img in self.images]
+        if ct > 0 and cl == 0:
+            imgs_normalized = [torch.from_numpy(img[ct:-ct, :, :].transpose(2, 0, 1)) for img in self.images]
+        elif ct > 0 and cl >  0:
+            imgs_normalized = [torch.from_numpy(img[ct:-ct, cl:-cl, :].transpose(2, 0, 1)) for img in self.images]
+        elif ct == 0 and cl > 0:
+            imgs_normalized = [torch.from_numpy(img[:, cl:-cl, :].transpose(2, 0, 1)) for img in self.images]
+        else:
+            imgs_normalized = [torch.from_numpy(img.transpose(2, 0, 1)) for img in self.images]
         imgs_normalized = torch.stack(imgs_normalized)
-        if self.inv_depth:
-            im_depth = imgs_normalized[:, 3]
-            im_depth[im_depth > 0.] = 1 / im_depth[im_depth > 0.]
         imgs_normalized.sub_(mean[None, :, None, None]).div_(std[None, :, None, None])
         imgs_normalized = imgs_normalized[:, self.channels]
+
         return imgs_org, imgs_normalized
 
     def transform_imus(self, imus):
