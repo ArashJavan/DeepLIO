@@ -4,9 +4,9 @@ datasets:
   kitti:
     root-path-sync: "datasets/KITTI/sync"
     root-path-unsync: "datasets/KITTI/extract"
-    image-width: 1080
+    image-width: 720
     image-height: 64
-    crop-factors: [0, 24] # [0, 4] # top, left
+    crop-factors: [0, 0] # [0, 4] # top, left
     fov-up: 3.
     fov-down: -25.
     max-depth: 80.
@@ -42,11 +42,11 @@ deeplio:
     pretrained: false
     model-path: ""
   imu-feat-net:
-    name: "imu-feat-rnn"
+    name: "imu-feat-fc"
     pretrained: false
     model-path: ""
   odom-feat-net:
-    name: "odom-feat-rnn"
+    name: "odom-feat-fc"
     pretrained: false
     model-path: ""
   fusion-net:
@@ -83,7 +83,7 @@ imu-feat-fc:  # FC
 imu-feat-rnn: # RNN
   type: "lstm"
   input-size: 6  # !fixed! do not chanage
-  hidden-size: 128
+  hidden-size: 6
   num-layers: 2
   bidirectional: false
   dropout: 0.
@@ -104,7 +104,7 @@ odom-feat-fc:
 # odometry feature network with rnn-layers
 odom-feat-rnn:
   type: "lstm"
-  hidden-size: 512
+  hidden-size: 128
   num-layers: 2
   bidirectional: true
   dropout: 0.
@@ -116,7 +116,7 @@ losses:
     params:
       learn: true
       sx: 1.
-      sq: -2.5
+      sq: 2.
   lwsloss:
     params:
       beta: 1125.

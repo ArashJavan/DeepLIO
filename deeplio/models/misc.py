@@ -2,7 +2,8 @@ import numpy as np
 import torch
 from torch.optim.lr_scheduler import _LRScheduler
 
-from deeplio.common.spatial import inv_SE3, rotation_matrix_to_quaternion, quaternion_exp_to_log
+from deeplio.common.spatial import inv_SE3, rotation_matrix_to_quaternion, \
+    quaternion_exp_to_log, quaternion_log_to_exp
 
 
 class DataCombiCreater(object):
@@ -102,22 +103,23 @@ class DataCombiCreater(object):
             T_i_ip1 = torch.matmul(T_i_inv, T_ip1)
             dx = T_i_ip1[:3, 3].contiguous()
             dq = rotation_matrix_to_quaternion(T_i_ip1[:3, :3].contiguous())
+            dq = quaternion_exp_to_log(dq).squeeze()
             state_f2f.append(torch.cat([dx, dq]))
 
         T_0 = T_global[0]
         T_0_inv = inv_SE3(T_0)
-        state_glob = []
+        state_f2g = []
         for combi in self.combinations:
             T_ip1 = T_global[combi[1]]
             T_i_ip1 = torch.matmul(T_0_inv, T_ip1)
             dx = T_i_ip1[:3, 3].contiguous()
             dq = rotation_matrix_to_quaternion(T_i_ip1[:3, :3].contiguous())
-            state_glob.append(torch.cat([dx, dq]))
+            state_f2g.append(torch.cat([dx, dq]))
 
         gt_f2f = torch.stack(state_f2f).to(self.device, non_blocking=True)
-        gt_glob_seq = torch.stack(state_glob).to(self.device, non_blocking=True)
+        gt_f2g = torch.stack(state_f2g).to(self.device, non_blocking=True)
 
-        return gt_f2f, gt_glob_seq
+        return gt_f2f, gt_f2g
 
     def __call__(self, args):
         return self.process(args)

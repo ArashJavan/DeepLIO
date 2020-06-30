@@ -25,8 +25,7 @@ def set_seed(seed=42):
 
 
 def worker_init_fn(worker_id):
-    # set_seed(seed=SEED)
-    pass
+    set_seed(seed=SEED)
 
 
 class Worker:
@@ -74,9 +73,10 @@ class Worker:
         self.tensor_writer = SummaryWriter(log_dir=self.runs_dir)
 
         torch.cuda.empty_cache()
-        cudnn.benchmark = True
+        cudnn.benchmark = False
+        cudnn.deterministic = True
 
-        #set_seed(seed=SEED)
+        set_seed(seed=SEED)
 
         flog_name = "{}/{}_{}.log".format(log_dir, self.ACTION, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
         if args.debug:

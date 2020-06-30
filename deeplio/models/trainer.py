@@ -219,22 +219,42 @@ class Trainer(Worker):
             gts_global = self.data_permuter.res_gt_global
 
             # prepare ground truth tranlational and rotational part
-            gt_f2f_x = gts_f2f[:, :, 0:3].view(-1, 3)
-            gt_f2f_q = gts_f2f[:, :, 3:7].view(-1, 4)
+            gt_f2f_x = gts_f2f[:, :, 0:3]
+            gt_f2f_q = gts_f2f[:, :, 3:]
+            gt_f2g_x = gts_f2g[:, :, 0:3]
+            gt_f2g_q = gts_f2g[:, :, 3:7]
+
+            if torch.isnan(gts_f2f).any() or torch.isinf(gts_f2f).any():
+                raise ValueError("gt-f2f:\n{}".format(gts_f2f))
+            if torch.isnan(gts_f2g).any() or torch.isinf(gts_f2g).any() :
+                raise ValueError("gt-f2g:\n{}".format(gts_f2g))
+
+            if torch.isnan(normals).any() or torch.isinf(normals).any():
+                raise ValueError("normals:\n{}".format(normals))
+            if torch.isnan(imgs).any() or torch.isinf(imgs).any():
+                raise ValueError("imgs:\n{}".format(imgs))
 
             # compute model predictions and loss
-            pred_x, pred_q = self.model([[imgs, normals], imus])
-            b, s, _ = pred_x.shape
-            loss = self.criterion(pred_x.view(b*s, -1), pred_q.view(b*s, -1), gt_f2f_x.view(b*s, -1), gt_f2f_q.view(b*s, -1))
+            pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
+            pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+
+            # gt_f2g_xx, pred_f2g_rr = self.se3_to_SE3(gt_f2f_x, gt_f2f_q)
+            # print(gt_f2g_xx - gt_f2g_x)
+            # print(pred_f2g_rr - gt_f2g_q)
+
+            loss = self.criterion(pred_f2f_x, pred_f2f_r,
+                                  pred_f2g_x, pred_f2g_r,
+                                  gt_f2f_x, gt_f2f_q,
+                                  gt_f2g_x, gt_f2g_q)
 
             # measure accuracy and record loss
-            losses.update(loss.detach().item(), len(pred_x))
+            losses.update(loss.detach().item(), len(pred_f2f_x))
             #pred_disp.update(preds.detach().cpu().numpy(), gts[0].cpu().numpy())
 
             # zero the parameter gradients, compute gradient and optimizer step
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.)
             optimizer.step()
 
             # measure elapsed time
@@ -245,8 +265,8 @@ class Trainer(Worker):
 
                 if idx % (5 * self.args.print_freq) == 0:
                     # print some prediction results
-                    x = pred_x[0:2].detach().cpu().flatten()
-                    q = spatial.normalize_quaternion(pred_q[0:2].detach().cpu()).flatten()
+                    x = pred_f2f_x[0, 0:2].detach().cpu().flatten()
+                    q = pred_f2f_r[0, 0:2].detach().cpu().flatten()
                     x_gt = gt_f2f_x[0:2].detach().cpu().flatten()
                     q_gt = gt_f2f_q[0:2].detach().cpu().flatten()
 
@@ -255,17 +275,18 @@ class Trainer(Worker):
                                       format(x[0], x[1], x[2], x[3], x[4], x[5],
                                              x_gt[0], x_gt[2], x_gt[2], x_gt[3], x_gt[4], x_gt[5]))
 
-                    self.logger.print("q-hat: [{:.4f},{:.4f},{:.4f},{:.4}], [{:.4f},{:.4f},{:.4f},{:.4}]"
-                                      "\nq-gt:  [{:.4f},{:.4f},{:.4f},{:.4}], [{:.4f},{:.4f},{:.4f},{:.4}]".
-                                      format(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7],
-                                             q_gt[0], q_gt[1], q_gt[2], q_gt[3], q_gt[4],q_gt[5], q_gt[6], q_gt[7]))
+                    self.logger.print("q-hat: [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]"
+                                      "\nq-gt:  [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]".
+                                      format(q[0], q[1], q[2], q[3], q[4], q[5],
+                                             q_gt[0], q_gt[1], q_gt[2], q_gt[3], q_gt[4],q_gt[5]))
 
                 progress.display(idx)
+                grad_norm = calc_grad_norm(self.model.parameters())
 
                 ### update tensorboard
                 self.step_val = epoch * len(self.train_dataloader) + idx
                 self.tensor_writer.add_scalar("Train/Loss", losses.avg, self.step_val)
-                self.tensor_writer.add_scalar("Train/Gradnorm", calc_grad_norm(self.model.parameters()), self.step_val)
+                self.tensor_writer.add_scalar("Train/Gradnorm", grad_norm, self.step_val)
                 self.tensor_writer.flush()
             self.data_last = data
 
@@ -288,6 +309,32 @@ class Trainer(Worker):
 
         for tag, param in self.model.named_parameters():
             self.tensor_writer.add_histogram(tag, param.data.detach().cpu().numpy(), self.step_val)
+
+    def se3_to_SE3(self, f2f_x, f2f_r):
+        batch_size, seq_size, _ = f2f_x.shape
+
+        f2g_q = torch.zeros((batch_size, seq_size, 4), dtype=f2f_x.dtype, device=f2f_x.device)
+        f2g_x = torch.zeros((batch_size, seq_size, 3), dtype=f2f_x.dtype, device=f2f_x.device)
+
+        for b in range(batch_size):
+            R_prev = torch.zeros((3, 3), dtype=f2f_x.dtype, device=f2f_x.device)
+            R_prev[:] = torch.eye(3, dtype=f2f_x.dtype, device=f2f_x.device)
+            t_prev = torch.zeros((3), dtype=f2f_x.dtype, device=f2f_x.device)
+
+            for s in range(seq_size):
+                t_cur = f2f_x[b, s]
+                q_cur = spatial.quaternion_log_to_exp(f2f_r[b, s])
+                R_cur = spatial.quaternion_to_rotation_matrix(q_cur)
+
+                if not torch.isclose(torch.det(R_cur), torch.FloatTensor([1.]).to(self.device)).all():
+                    raise ValueError("Det error:\nR\n{}\nq:\n{}".format(R_cur, q_cur))
+
+                t_prev = torch.matmul(R_prev, t_cur) + t_prev
+                R_prev = torch.matmul(R_prev, R_cur)
+
+                f2g_q[b, s] = spatial.rotation_matrix_to_quaternion(R_prev)
+                f2g_x[b, s] = t_prev
+        return f2g_x, f2g_q
 
     def validate(self, epoch):
         writer = self.tensor_writer
@@ -312,7 +359,7 @@ class Trainer(Worker):
                 # check if we can run or are we stopped
                 if not self.is_running:
                     return 0
-
+                return 0.
                 # prepare data
                 self.data_permuter(data)
                 imgs = self.data_permuter.res_imgs
