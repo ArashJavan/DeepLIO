@@ -15,14 +15,14 @@ datasets:
     train:
       #2011-10-03: [27, 42, 34]
       #2011-09-30: [16, 18, 20, 27, 28]
-      2011-09-30: [16]
+      2011-09-30: [18]
     test:
       #2011-10-03: [27, 42, 34]
       #2011-09-30: [16, 33, 34]
-      2011-09-30: [16]
+      2011-09-30: [18]
     validation:
       #2011-09-26: [23, 39]
-      2011-09-30: [16]
+      2011-09-30: [33]
 
     # channesl: x, y, z, remission, nx, ny ,nz, range)
     mean-image: [-0.0124, 0.3444, -0.9382, 0.236, -0.0022, 0.0046, 0.4149, 0.1178]
@@ -35,8 +35,8 @@ datasets:
 ### DeepLIO Network ##############################
 deeplio:
   dropout: 0.25
-  pretrained: false
-  model-path: ""
+  pretrained: true
+  model-path: "outputs/train_deeplio_20200630_123058/cpkt_deeplio.tar"
   lidar-feat-net:
     name: "lidar-feat-pointseg"
     pretrained: false
@@ -115,8 +115,8 @@ losses:
   hwsloss:
     params:
       learn: true
-      sx: 1.
-      sq: 2.
+      sx: 0.
+      sq: -2.
   lwsloss:
     params:
       beta: 1125.

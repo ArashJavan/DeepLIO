@@ -55,7 +55,7 @@ class DeepLIO(BaseDeepLIO):
         if self.p > 0:
             self.drop = nn.Dropout(self.p)
         self.fc_pos = nn.Linear(in_shape, 3)
-        self.fc_ori = nn.Linear(in_shape, 3)
+        self.fc_ori = nn.Linear(in_shape, 4)
 
     def forward(self, x):
         lidar_imgs = x[0]  # lidar image frames

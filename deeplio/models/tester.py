@@ -120,22 +120,34 @@ class Tester(Worker):
                 gts_f2g = self.data_permuter.res_gt_f2g
                 gts_global = self.data_permuter.res_gt_global
 
+                if torch.isnan(gts_f2f).any() or torch.isinf(gts_f2f).any():
+                    raise ValueError("gt-f2f:\n{}".format(gts_f2f))
+                if torch.isnan(gts_f2g).any() or torch.isinf(gts_f2g).any():
+                    raise ValueError("gt-f2g:\n{}".format(gts_f2g))
+
+                if torch.isnan(normals).any() or torch.isinf(normals).any():
+                    raise ValueError("normals:\n{}".format(normals))
+                if torch.isnan(imgs).any() or torch.isinf(imgs).any():
+                    raise ValueError("imgs:\n{}".format(imgs))
+
                 # prepare ground truth tranlational and rotational part
                 gt_f2f_x = gts_f2f[:, :, 0:3]
-                gt_f2f_q = gts_f2f[:, :, 3:7]
+                gt_f2f_q = gts_f2f[:, :, 3:]
+                gt_f2g_x = gts_f2g[:, :, 0:3]
+                gt_f2g_q = gts_f2g[:, :, 3:7]
 
                 # compute model predictions and loss
-                pred_x, pred_q = self.model([[imgs, normals], imus])
-                b, s, _ = pred_x.shape
-                loss = self.criterion(pred_x.view(b * s, -1), pred_q.view(b * s, -1), gt_f2f_x.view(b * s, -1),
-                                      gt_f2f_q.view(b * s, -1))
-                pred_x = pred_x.view(b * s, -1)
-                pred_q = pred_q.view(b * s, -1)
-                gt_f2f_x = gt_f2f_x.view(b * s, -1)
-                gt_f2f_q = gt_f2f_q.view(b * s, -1)
+                pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
+                pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+                # pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+
+                loss = self.criterion(pred_f2f_x, pred_f2f_r,
+                                      gt_f2g_x, gt_f2g_q,
+                                      gt_f2f_x, gt_f2f_q,
+                                      gt_f2g_x, gt_f2g_q)
 
                 # measure accuracy and record loss
-                losses.update(loss.detach().item(), len(pred_x))
+                losses.update(loss.detach().item(), len(pred_f2f_x))
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)
@@ -170,24 +182,24 @@ class Tester(Worker):
 
                 gt_x = gt_f2f_x.detach().cpu().squeeze()
                 gt_q = gt_f2f_q.detach().cpu().squeeze()
-                pred_x = pred_x.detach().cpu().squeeze()
-                pred_q = pred_q.detach().cpu().squeeze()
+                pred_f2f_x = pred_f2f_x.detach().cpu().squeeze()
+                pred_f2f_r = pred_f2f_r.detach().cpu().squeeze()
 
                 T_local = np.identity(4)
 
                 # tranlation
-                T_local[:3, 3] = pred_x.numpy() #  gt_x.numpy()
+                T_local[:3, 3] = pred_f2f_x.numpy() #  gt_x.numpy()
                 #T_local[:3, 3] = gt_x.numpy()
 
                 if self.args.param == 'xq':
-                    T_local[:3, 3] = pred_x.numpy()
-                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q).numpy()
+                    T_local[:3, 3] = pred_f2f_x.numpy()
+                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_f2f_r).numpy()
                 elif self.args.param == 'x':
-                    T_local[:3, 3] = pred_x.numpy()
+                    T_local[:3, 3] = pred_f2f_x.numpy()
                     T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
                 elif self.args.param == 'q':
                     T_local[:3, 3] = gt_x.numpy()
-                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q).numpy()
+                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_f2f_r).numpy()
                 else:
                     T_local[:3, 3] = gt_x.numpy()
                     T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()

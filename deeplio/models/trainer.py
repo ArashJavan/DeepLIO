@@ -48,9 +48,12 @@ class Trainer(Worker):
         self.model = nets.get_model(input_shape=(self.n_channels, self.im_height_model, self.im_width_model),
                                     cfg=self.cfg, device=self.device)
 
-        self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
-        self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=self.epochs, end_learning_rate=0.00005, power=2.0)
         self.criterion = get_loss_function(self.cfg, args.device)
+        self.optimizer = create_optimizer([{'params': self.model.parameters()},
+                                           {'params': self.criterion.parameters()}]
+                                          , self.cfg, args)
+        self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=self.epochs, end_learning_rate=0.00005,
+                                              power=2.0)
 
         self.has_lidar = True if self.model.lidar_feat_net is not None else False
         self.has_imu = True if self.model.imu_feat_net is not None else False
@@ -146,6 +149,7 @@ class Trainer(Worker):
                 'state_dict': self.model.state_dict(),
                 'best_acc': self.best_acc,
                 'optimizer' : self.optimizer.state_dict(),
+                'criterion': self.criterion.state_dict(),
             }, is_best, filename)
 
             feat_nets = self.model.get_feat_networks()
@@ -218,12 +222,6 @@ class Trainer(Worker):
             gts_f2g = self.data_permuter.res_gt_f2g
             gts_global = self.data_permuter.res_gt_global
 
-            # prepare ground truth tranlational and rotational part
-            gt_f2f_x = gts_f2f[:, :, 0:3]
-            gt_f2f_q = gts_f2f[:, :, 3:]
-            gt_f2g_x = gts_f2g[:, :, 0:3]
-            gt_f2g_q = gts_f2g[:, :, 3:7]
-
             if torch.isnan(gts_f2f).any() or torch.isinf(gts_f2f).any():
                 raise ValueError("gt-f2f:\n{}".format(gts_f2f))
             if torch.isnan(gts_f2g).any() or torch.isinf(gts_f2g).any() :
@@ -234,21 +232,28 @@ class Trainer(Worker):
             if torch.isnan(imgs).any() or torch.isinf(imgs).any():
                 raise ValueError("imgs:\n{}".format(imgs))
 
+            # prepare ground truth tranlational and rotational part
+            gt_f2f_x = gts_f2f[:, :, 0:3]
+            gt_f2f_q = gts_f2f[:, :, 3:]
+            gt_f2g_x = gts_f2g[:, :, 0:3]
+            gt_f2g_q = gts_f2g[:, :, 3:7]
+
             # compute model predictions and loss
             pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
-            pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+            pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+            #pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
 
             # gt_f2g_xx, pred_f2g_rr = self.se3_to_SE3(gt_f2f_x, gt_f2f_q)
             # print(gt_f2g_xx - gt_f2g_x)
             # print(pred_f2g_rr - gt_f2g_q)
 
             loss = self.criterion(pred_f2f_x, pred_f2f_r,
-                                  pred_f2g_x, pred_f2g_r,
+                                  gt_f2g_x, gt_f2g_q,
                                   gt_f2f_x, gt_f2f_q,
                                   gt_f2g_x, gt_f2g_q)
 
             # measure accuracy and record loss
-            losses.update(loss.detach().item(), len(pred_f2f_x))
+            losses.update(loss.detach().item(), self.batch_size*self.seq_size)
             #pred_disp.update(preds.detach().cpu().numpy(), gts[0].cpu().numpy())
 
             # zero the parameter gradients, compute gradient and optimizer step
@@ -275,10 +280,10 @@ class Trainer(Worker):
                                       format(x[0], x[1], x[2], x[3], x[4], x[5],
                                              x_gt[0], x_gt[2], x_gt[2], x_gt[3], x_gt[4], x_gt[5]))
 
-                    self.logger.print("q-hat: [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]"
-                                      "\nq-gt:  [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]".
-                                      format(q[0], q[1], q[2], q[3], q[4], q[5],
-                                             q_gt[0], q_gt[1], q_gt[2], q_gt[3], q_gt[4],q_gt[5]))
+                    self.logger.print("q-hat: [{:.4f},{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f},{:.4f}]"
+                                      "\nq-gt:  [{:.4f},{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f},{:.4f}]".
+                                      format(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7],
+                                             q_gt[0], q_gt[1], q_gt[2], q_gt[3], q_gt[4], q_gt[5], q_gt[6], q_gt[7]))
 
                 progress.display(idx)
                 grad_norm = calc_grad_norm(self.model.parameters())
@@ -287,7 +292,10 @@ class Trainer(Worker):
                 self.step_val = epoch * len(self.train_dataloader) + idx
                 self.tensor_writer.add_scalar("Train/Loss", losses.avg, self.step_val)
                 self.tensor_writer.add_scalar("Train/Gradnorm", grad_norm, self.step_val)
+                self.tensor_writer.add_scalar("Train/sx", self.criterion.sx.data, self.step_val)
+                self.tensor_writer.add_scalar("Train/sq", self.criterion.sq.data, self.step_val)
                 self.tensor_writer.flush()
+
             self.data_last = data
 
         self.post_train_iter()
@@ -359,7 +367,7 @@ class Trainer(Worker):
                 # check if we can run or are we stopped
                 if not self.is_running:
                     return 0
-                return 0.
+
                 # prepare data
                 self.data_permuter(data)
                 imgs = self.data_permuter.res_imgs
@@ -371,18 +379,34 @@ class Trainer(Worker):
                 gts_f2g = self.data_permuter.res_gt_f2g
                 gts_global = self.data_permuter.res_gt_global
 
+                if torch.isnan(gts_f2f).any() or torch.isinf(gts_f2f).any():
+                    raise ValueError("gt-f2f:\n{}".format(gts_f2f))
+                if torch.isnan(gts_f2g).any() or torch.isinf(gts_f2g).any():
+                    raise ValueError("gt-f2g:\n{}".format(gts_f2g))
+
+                if torch.isnan(normals).any() or torch.isinf(normals).any():
+                    raise ValueError("normals:\n{}".format(normals))
+                if torch.isnan(imgs).any() or torch.isinf(imgs).any():
+                    raise ValueError("imgs:\n{}".format(imgs))
+
                 # prepare ground truth tranlational and rotational part
-                gt_f2f_x = gts_f2f[:, :, 0:3].view(-1, 3)
-                gt_f2f_q = gts_f2f[:, :, 3:7].view(-1, 4)
+                gt_f2f_x = gts_f2f[:, :, 0:3]
+                gt_f2f_q = gts_f2f[:, :, 3:]
+                gt_f2g_x = gts_f2g[:, :, 0:3]
+                gt_f2g_q = gts_f2g[:, :, 3:7]
 
                 # compute model predictions and loss
-                pred_x, pred_q = self.model([[imgs, normals], imus])
-                b, s, _ = pred_x.shape
-                loss = self.criterion(pred_x.view(b * s, -1), pred_q.view(b * s, -1), gt_f2f_x.view(b * s, -1),
-                                      gt_f2f_q.view(b * s, -1))
+                pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
+                pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+                # pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+
+                loss = self.criterion(pred_f2f_x, pred_f2f_r,
+                                      gt_f2g_x, gt_f2g_q,
+                                      gt_f2f_x, gt_f2f_q,
+                                      gt_f2g_x, gt_f2g_q)
 
                 # measure accuracy and record loss
-                losses.update(loss.detach().item(), len(pred_x))
+                losses.update(loss.detach().item(), self.batch_size*self.seq_size)
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)
@@ -398,13 +422,6 @@ class Trainer(Worker):
 
         self.post_valiate()
         return losses.avg
-
-    def lr_adjuster(self, epoch):
-        curr_lr = self.lr_scheduler.get_last_lr()[0]
-        if epoch > 0 and (epoch % self.args.lr_decay == 0):
-            if curr_lr > 1e-5:
-                return 0.5
-        return 1.
 
     def save_checkpoint(self, state, is_best, filename="checkpoint"):
         file_path = '{}/{}.tar'.format(self.checkpoint_dir, filename)

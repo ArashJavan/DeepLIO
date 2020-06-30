@@ -50,9 +50,10 @@ class HWSLoss(nn.Module):
         :param learn_hyper_params: learning the smoothnes terms during training
         """
         super(HWSLoss, self).__init__()
+        self.learn_hyper_params = learn_hyper_params
 
-        self.sx = torch.tensor(sx, device=device, requires_grad=learn_hyper_params)
-        self.sq = torch.tensor(sq, device=device, requires_grad=learn_hyper_params)
+        self.sx = torch.nn.Parameter(torch.tensor(sx, device=device, requires_grad=learn_hyper_params))
+        self.sq = torch.nn.Parameter(torch.tensor(sq, device=device, requires_grad=learn_hyper_params))
         self.loss_fn = nn.MSELoss()
 
     def forward(self, pred_f2f_x, pred_f2f_r, pred_f2g_x, pred_f2g_r,
