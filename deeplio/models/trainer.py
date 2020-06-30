@@ -166,13 +166,11 @@ class Trainer(Worker):
         self.close()
 
     def train(self, epoch):
-        writer = self.tensor_writer
         optimizer = self.optimizer
-        criterion = self.criterion
-        model = self.model
 
         # switch to train mode
-        model.train()
+        self.model.train()
+        self.criterion.train()
 
         batch_time = AverageMeter('Time', ':6.3f')
         data_time = AverageMeter('Data', ':6.3f')
@@ -186,7 +184,8 @@ class Trainer(Worker):
             prefix="Epoch: [{}]".format(epoch))
 
         end = time.time()
-
+        #torch.autograd.set_detect_anomaly(True)
+        #with torch.autograd.detect_anomaly():
         for idx, data in enumerate(self.train_dataloader):
 
             # check if we can run or are we stopped
@@ -240,21 +239,21 @@ class Trainer(Worker):
 
             # compute model predictions and loss
             pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
-            pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+            #pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
 
             if torch.isnan(pred_f2f_x).any() or torch.isinf(pred_f2f_x).any():
                 raise ValueError("pred_f2f_x:\n{}".format(pred_f2f_x))
             if torch.isnan(pred_f2f_r).any() or torch.isinf(pred_f2f_r).any():
                 raise ValueError("pred_f2f_r:\n{}".format(pred_f2f_r))
 
-            #pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+            pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
 
             # gt_f2g_xx, pred_f2g_rr = self.se3_to_SE3(gt_f2f_x, gt_f2f_q)
             # print(gt_f2g_xx - gt_f2g_x)
             # print(pred_f2g_rr - gt_f2g_q)
 
             loss = self.criterion(pred_f2f_x, pred_f2f_r,
-                                  gt_f2g_x, gt_f2g_q,
+                                  pred_f2g_x, pred_f2g_r,
                                   gt_f2f_x, gt_f2f_q,
                                   gt_f2g_x, gt_f2g_q)
 
@@ -263,10 +262,22 @@ class Trainer(Worker):
             #pred_disp.update(preds.detach().cpu().numpy(), gts[0].cpu().numpy())
 
             # zero the parameter gradients, compute gradient and optimizer step
-            optimizer.zero_grad()
+            self.optimizer.zero_grad()
             loss.backward()
+
+            param_means = torch.FloatTensor([param.mean().detach() for param in self.model.parameters()])
+            if torch.isnan(param_means).any():
+                raise ValueError("param_means:\n{}".format(param_means))
+
+            param_grad_means = torch.FloatTensor([param.grad.mean().detach() for param in self.model.parameters()])
+            if torch.isnan(param_grad_means).any():
+                raise ValueError("param_grad_means:\n{}".format(param_grad_means))
+
+            if idx % 10 == 0:
+                pass # print("param-mean: {}, grad-mean: {}".format(param_means.mean().data, param_grad_means.mean().data))
+
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.)
-            optimizer.step()
+            self.optimizer.step()
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -276,10 +287,10 @@ class Trainer(Worker):
 
                 if idx % (5 * self.args.print_freq) == 0:
                     # print some prediction results
-                    x = pred_f2f_x[0, 0:2].detach().cpu().flatten()
-                    q = pred_f2f_r[0, 0:2].detach().cpu().flatten()
-                    x_gt = gt_f2f_x[0:2].detach().cpu().flatten()
-                    q_gt = gt_f2f_q[0:2].detach().cpu().flatten()
+                    x = pred_f2g_x[0, 0:2].detach().cpu().flatten()
+                    q = pred_f2g_r[0, 0:2].detach().cpu().flatten()
+                    x_gt = gt_f2g_x[0:2].detach().cpu().flatten()
+                    q_gt = gt_f2g_q[0:2].detach().cpu().flatten()
 
                     self.logger.print("x-hat: [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]"
                                       "\nx-gt:  [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]".
@@ -303,6 +314,8 @@ class Trainer(Worker):
                 self.tensor_writer.flush()
 
             self.data_last = data
+            if idx > 5:
+                break
 
         self.post_train_iter()
 
@@ -346,15 +359,14 @@ class Trainer(Worker):
                 t_prev = torch.matmul(R_prev, t_cur) + t_prev
                 R_prev = torch.matmul(R_prev, R_cur)
 
+                if not torch.isclose(torch.det(R_prev), torch.FloatTensor([1.]).to(self.device)).all():
+                    raise ValueError("Det error:\nR\n{}".format(R_prev))
+
                 f2g_q[b, s] = spatial.rotation_matrix_to_quaternion(R_prev)
                 f2g_x[b, s] = t_prev
         return f2g_x, f2g_q
 
     def validate(self, epoch):
-        writer = self.tensor_writer
-        criterion = self.criterion
-        model = self.model
-
         batch_time = AverageMeter('Time', ':6.3f')
         losses = AverageMeter('Loss', ':.4e')
         progress = ProgressMeter(
@@ -364,7 +376,8 @@ class Trainer(Worker):
             prefix='Test: ')
 
         # switch to evaluate mode
-        model.eval()
+        self.model.eval()
+        self.criterion.eval()
 
         with torch.no_grad():
             end = time.time()
@@ -403,11 +416,21 @@ class Trainer(Worker):
 
                 # compute model predictions and loss
                 pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
-                pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
-                # pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+                # pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+
+                if torch.isnan(pred_f2f_x).any() or torch.isinf(pred_f2f_x).any():
+                    raise ValueError("pred_f2f_x:\n{}".format(pred_f2f_x))
+                if torch.isnan(pred_f2f_r).any() or torch.isinf(pred_f2f_r).any():
+                    raise ValueError("pred_f2f_r:\n{}".format(pred_f2f_r))
+
+                pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+
+                # gt_f2g_xx, pred_f2g_rr = self.se3_to_SE3(gt_f2f_x, gt_f2f_q)
+                # print(gt_f2g_xx - gt_f2g_x)
+                # print(pred_f2g_rr - gt_f2g_q)
 
                 loss = self.criterion(pred_f2f_x, pred_f2f_r,
-                                      gt_f2g_x, gt_f2g_q,
+                                      pred_f2g_x, pred_f2g_r,
                                       gt_f2f_x, gt_f2f_q,
                                       gt_f2g_x, gt_f2g_q)
 
@@ -425,6 +448,7 @@ class Trainer(Worker):
                     self.tensor_writer.add_scalar\
                         ("Val/Loss", losses.avg, step_val)
                     self.tensor_writer.flush()
+                return 0.
 
         self.post_valiate()
         return losses.avg

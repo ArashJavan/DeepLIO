@@ -114,8 +114,10 @@ class LidarPointSegFeat(BaseLidarFeatNet):
 class LidarSimpleFeat0(BaseLidarFeatNet):
     def __init__(self, input_shape, cfg):
         super(LidarSimpleFeat0, self).__init__(input_shape, cfg)
-        self.encoder1 = FeatureNetSimple0(self.input_shape)
-        self.encoder2 = FeatureNetSimple0(self.input_shape)
+        c, h, w = self.input_shape
+
+        self.encoder1 = FeatureNetSimple0([2*c, h, w])
+        self.encoder2 = FeatureNetSimple0([2*c, h, w])
 
         if self.p > 0:
             self.drop = nn.Dropout(self.p)
@@ -129,7 +131,10 @@ class LidarSimpleFeat0(BaseLidarFeatNet):
         mask0: predicted mask to each time sequence
         """
         imgs_xyz, imgs_normals = x[0], x[1]
-        batch_size = imgs_xyz.shape[0]
+
+        b, s, t, c, h, w = imgs_xyz.shape
+        imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
+        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
 
         x_feat_0 = self.encoder1(imgs_xyz)
         x_feat_1 = self.encoder2(imgs_normals)
@@ -145,7 +150,7 @@ class LidarSimpleFeat0(BaseLidarFeatNet):
             x = self.drop(x)
 
         # reshape output to BxTxCxHxW
-        x = x.view(batch_size, self.seq_size, num_flat_features(x, 1))
+        x = x.view(b, s, num_flat_features(x, 1))
         return x
 
 

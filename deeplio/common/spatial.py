@@ -236,21 +236,17 @@ def rotation_matrix_to_angle_axis(
 
 def rotation_matrix_to_quaternion(
         rotation_matrix: torch.Tensor,
-        eps: float = 1e-8) -> torch.Tensor:
+        eps: float = 1e-6) -> torch.Tensor:
     r"""Convert 3x3 rotation matrix to 4d quaternion vector.
     The quaternion vector has components in (x, y, z, w) format.
-
     Args:
         rotation_matrix (torch.Tensor): the rotation matrix to convert.
         eps (float): small value to avoid zero division. Default: 1e-8.
-
     Return:
         torch.Tensor: the rotation in quaternion.
-
     Shape:
         - Input: :math:`(*, 3, 3)`
         - Output: :math:`(*, 4)`
-
     Example:
         >>> input = torch.rand(4, 3, 3)  # Nx3x3
         >>> output = kornia.rotation_matrix_to_quaternion(input)  # Nx4
@@ -267,7 +263,13 @@ def rotation_matrix_to_quaternion(
     def safe_zero_division(numerator: torch.Tensor,
                            denominator: torch.Tensor) -> torch.Tensor:
         eps: float = torch.finfo(numerator.dtype).tiny  # type: ignore
-        return numerator / torch.clamp(denominator, min=eps)
+
+        if torch.isnan(numerator).any()or torch.isinf(numerator).any():
+            print("numerator error:\n{}".format(numerator))
+
+        if torch.isnan(denominator).any() or torch.isinf(denominator).any():
+            print("denominator error:\n{}".format(denominator))
+        return numerator / torch.clamp(denominator, min=1e-6)
 
     rotation_matrix_vec: torch.Tensor = rotation_matrix.view(
         *rotation_matrix.shape[:-2], 9)
@@ -355,14 +357,11 @@ def normalize_quaternion(quaternion: torch.Tensor,
 def quaternion_to_rotation_matrix(quaternion: torch.Tensor) -> torch.Tensor:
     r"""Converts a quaternion to a rotation matrix.
     The quaternion should be in (x, y, z, w) format.
-
     Args:
         quaternion (torch.Tensor): a tensor containing a quaternion to be
           converted. The tensor can be of shape :math:`(*, 4)`.
-
     Return:
         torch.Tensor: the rotation matrix of shape :math:`(*, 3, 3)`.
-
     Example:
         >>> quaternion = torch.tensor([0., 0., 1., 0.])
         >>> kornia.quaternion_to_rotation_matrix(quaternion)
@@ -529,14 +528,11 @@ def quaternion_log_to_exp(quaternion: torch.Tensor,
                           eps: float = 1e-8) -> torch.Tensor:
     r"""Applies exponential map to log quaternion.
     The quaternion should be in (x, y, z, w) format.
-
     Args:
         quaternion (torch.Tensor): a tensor containing a quaternion to be
           converted. The tensor can be of shape :math:`(*, 3)`.
-
     Return:
         torch.Tensor: the quaternion exponential map of shape :math:`(*, 4)`.
-
     Example:
         >>> quaternion = torch.tensor([0., 0., 0.])
         >>> kornia.quaternion_log_to_exp(quaternion)
@@ -568,14 +564,11 @@ def quaternion_exp_to_log(quaternion: torch.Tensor,
                           eps: float = 1e-8) -> torch.Tensor:
     r"""Applies the log map to a quaternion.
     The quaternion should be in (x, y, z, w) format.
-
     Args:
         quaternion (torch.Tensor): a tensor containing a quaternion to be
           converted. The tensor can be of shape :math:`(*, 4)`.
-
     Return:
         torch.Tensor: the quaternion log map of shape :math:`(*, 3)`.
-
     Example:
         >>> quaternion = torch.tensor([0., 0., 0., 1.])
         >>> kornia.quaternion_exp_to_log(quaternion)
