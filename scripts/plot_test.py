@@ -51,6 +51,10 @@ colors = ['#1f77b4',
             '#7f7f7f',
             '#bcbd22',
             '#17becf',
+          'black',
+          'red',
+          'green',
+          'blue'
 ]
 
 tests_idx = [1, 5, 8, 10]

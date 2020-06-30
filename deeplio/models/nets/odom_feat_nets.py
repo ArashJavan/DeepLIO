@@ -18,7 +18,9 @@ class OdomFeatFC(BaseNet):
 
         layers = [nn.Linear(self.input_size, self.hidden_size[0])]
         for i in range(1, num_layers):
-            layers.append(nn.Linear(self.hidden_size[i - 1], self.hidden_size[i]))
+            layers.append(nn.Sequential(nn.Linear(self.hidden_size[i - 1], self.hidden_size[i]),
+                                        nn.LeakyReLU(inplace=True, negative_slope=0.01),
+                                        nn.BatchNorm1d(num_features=self.hidden_size[i])))
         if self.p > 0.:
             self.layers.append(nn.Dropout(self.p))
         self.layers = nn.ModuleList(layers)
@@ -32,7 +34,7 @@ class OdomFeatFC(BaseNet):
         b, s, n = x.shape
         x = x.view(b*s, n)
         for i, layer in enumerate(self.layers):
-            x = F.leaky_relu(layer(x), negative_slope=0.01, inplace=True)
+            x = layer(x)
         x = x.view(b, s, -1)
         return x
 
