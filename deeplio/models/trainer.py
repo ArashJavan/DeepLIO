@@ -241,6 +241,12 @@ class Trainer(Worker):
             # compute model predictions and loss
             pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
             pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+
+            if torch.isnan(pred_f2f_x).any() or torch.isinf(pred_f2f_x).any():
+                raise ValueError("pred_f2f_x:\n{}".format(pred_f2f_x))
+            if torch.isnan(pred_f2f_r).any() or torch.isinf(pred_f2f_r).any():
+                raise ValueError("pred_f2f_r:\n{}".format(pred_f2f_r))
+
             #pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
 
             # gt_f2g_xx, pred_f2g_rr = self.se3_to_SE3(gt_f2f_x, gt_f2f_q)

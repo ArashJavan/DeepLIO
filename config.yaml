@@ -35,8 +35,8 @@ datasets:
 ### DeepLIO Network ##############################
 deeplio:
   dropout: 0.25
-  pretrained: true
-  model-path: "outputs/train_deeplio_20200630_123058/cpkt_deeplio.tar"
+  pretrained: false
+  model-path: ""
   lidar-feat-net:
     name: "lidar-feat-pointseg"
     pretrained: false
