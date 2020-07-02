@@ -3,7 +3,7 @@ import torch
 from torch.optim.lr_scheduler import _LRScheduler
 
 from deeplio.common.spatial import inv_SE3, rotation_matrix_to_quaternion, \
-    quaternion_exp_to_log, quaternion_log_to_exp
+    quaternion_exp_to_log, quaternion_log_to_exp, rotation_matrix_to_euler
 
 
 class DataCombiCreater(object):
@@ -102,8 +102,8 @@ class DataCombiCreater(object):
             T_ip1 = T_global[combi[1]]
             T_i_ip1 = torch.matmul(T_i_inv, T_ip1)
             dx = T_i_ip1[:3, 3].contiguous()
-            dq = rotation_matrix_to_quaternion(T_i_ip1[:3, :3].contiguous())
-            dq = quaternion_exp_to_log(dq).squeeze()
+            dq = rotation_matrix_to_euler(T_i_ip1[:3, :3].squeeze(0).contiguous())
+            #dq = quaternion_exp_to_log(dq).squeeze()
             state_f2f.append(torch.cat([dx, dq]))
 
         T_0 = T_global[0]

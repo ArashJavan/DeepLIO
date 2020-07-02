@@ -320,6 +320,36 @@ def rotation_matrix_to_quaternion(
     return quaternion
 
 
+def rotation_matrix_to_euler(rotation_matrix: torch.Tensor):
+    '''    Convert 3x3 rotation matrix to roll, pitch, yaw angles
+    Args:
+    From a paper by Gregory G. Slabaugh (undated),
+    "Computing Euler angles from a rotation matrix
+    '''
+
+    def isclose(x, y, rtol=1.e-5, atol=1.e-8):
+        return np.isclose(x, y, rtol=rtol, atol=atol)
+
+    batch_size = rotation_matrix.shape[0]
+
+    euler_angles = torch.zeros((batch_size, 3), dtype=rotation_matrix.dtype, device=rotation_matrix.device)
+    for i in range(batch_size):
+        R = rotation_matrix[i]
+        yaw = 0.0
+        if isclose(R[2,0], -1.0):
+            pitch = pi/2.0
+            roll = torch.atan2(R[0,1], R[0,2])
+        elif isclose(R[2,0], 1.0):
+            pitch = -pi/2.0
+            roll = torch.atan2(-R[0,1],-R[0,2])
+        else:
+            pitch = -torch.asin(R[2,0])
+            cos_pitch = torch.cos(pitch)
+            roll = torch.atan2(R[2,1]/cos_pitch, R[2,2]/cos_pitch)
+            yaw = torch.atan2(R[1,0]/cos_pitch, R[0,0]/cos_pitch)
+        euler_angles[i] = [roll, pitch, yaw]
+    return euler_angles
+
 def normalize_quaternion(quaternion: torch.Tensor,
                          eps: float = 1e-12) -> torch.Tensor:
     r"""Normalizes a quaternion.
@@ -522,6 +552,44 @@ def euler_to_quaternion(euler: torch.Tensor) -> torch.Tensor:
 
     q = torch.stack([x, y, z, w]).T
     return q
+
+
+def euler_to_rotation_matrix(angle):
+    """Convert euler angles to rotation matrix.
+     Reference: https://github.com/pulkitag/pycaffe-utils/blob/master/rot_utils.py#L174
+    Args:
+        angle: rotation angle along 3 axis (roll, pitch, yaw in radians) -- size = [B, 3]
+    Returns:
+        Rotation matrix corresponding to the euler angles -- size = [B, 3, 3]
+    """
+    B = angle.size(0)
+    x, y, z = angle[:,0], angle[:,1], angle[:,2]
+
+    cosz = torch.cos(z)
+    sinz = torch.sin(z)
+
+    zeros = z.detach()*0
+    ones = zeros.detach()+1
+    zmat = torch.stack([cosz, -sinz, zeros,
+                        sinz,  cosz, zeros,
+                        zeros, zeros,  ones], dim=1).reshape(B, 3, 3)
+
+    cosy = torch.cos(y)
+    siny = torch.sin(y)
+
+    ymat = torch.stack([cosy, zeros,  siny,
+                        zeros,  ones, zeros,
+                        -siny, zeros,  cosy], dim=1).reshape(B, 3, 3)
+
+    cosx = torch.cos(x)
+    sinx = torch.sin(x)
+
+    xmat = torch.stack([ones, zeros, zeros,
+                        zeros,  cosx, -sinx,
+                        zeros,  sinx,  cosx], dim=1).reshape(B, 3, 3)
+
+    rotMat = zmat @ ymat @ xmat
+    return rotMat
 
 
 def quaternion_log_to_exp(quaternion: torch.Tensor,

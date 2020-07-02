@@ -265,11 +265,11 @@ class Trainer(Worker):
             self.optimizer.zero_grad()
             loss.backward()
 
-            param_means = torch.FloatTensor([param.mean().detach() for param in self.model.parameters()])
+            param_means = torch.FloatTensor([param.mean().detach() for param in self.model.parameters() if param is not None])
             if torch.isnan(param_means).any():
                 raise ValueError("param_means:\n{}".format(param_means))
 
-            param_grad_means = torch.FloatTensor([param.grad.mean().detach() for param in self.model.parameters()])
+            param_grad_means = torch.FloatTensor([param.grad.mean().detach() for param in self.model.parameters() if param.grad is not None])
             if torch.isnan(param_grad_means).any():
                 raise ValueError("param_grad_means:\n{}".format(param_grad_means))
 
@@ -314,25 +314,8 @@ class Trainer(Worker):
                 self.tensor_writer.flush()
 
             self.data_last = data
-            if idx > 5:
-                break
 
         self.post_train_iter()
-
-        # save infos to -e.g. gradient hists and images to tensorbaord and the end of training
-        # b, s, c, h, w = np.asarray(data_last['images'].shape)
-        # imgs = data_last['images'].reshape(b*s, c, h, w)
-        # imgs_remossion = imgs[:, 1, :, :]
-        # imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
-        # imgs_remossion = torch.stack(imgs_remossion)
-        # imgs_remossion = make_grid(imgs_remossion, nrow=2)
-        # self.tensor_writer.add_image("Images/Remissions", imgs_remossion, global_step=step_val)
-        #
-        # imgs_range = imgs[:, 0, :, :]
-        # imgs_range = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_range]
-        # imgs_range = torch.stack(imgs_range)
-        # imgs_range = make_grid(imgs_range, nrow=2)
-        # self.tensor_writer.add_image("Images/Range", imgs_range, global_step=step_val)
 
         for tag, param in self.model.named_parameters():
             self.tensor_writer.add_histogram(tag, param.data.detach().cpu().numpy(), self.step_val)
@@ -350,11 +333,12 @@ class Trainer(Worker):
 
             for s in range(seq_size):
                 t_cur = f2f_x[b, s]
-                q_cur = spatial.quaternion_log_to_exp(f2f_r[b, s])
-                R_cur = spatial.quaternion_to_rotation_matrix(q_cur)
+                #q_cur = spatial.euler_to_rotation_matrix (f2f_r[b, s])
+                euler_cur = f2f_r[b, s]
+                R_cur = spatial.euler_to_rotation_matrix (euler_cur) # spatial.quaternion_to_rotation_matrix(q_cur)
 
                 if not torch.isclose(torch.det(R_cur), torch.FloatTensor([1.]).to(self.device)).all():
-                    raise ValueError("Det error:\nR\n{}\nq:\n{}".format(R_cur, q_cur))
+                    raise ValueError("Det error:\nR\n{}\nq:\n{}".format(R_cur, euler_cur))
 
                 t_prev = torch.matmul(R_prev, t_cur) + t_prev
                 R_prev = torch.matmul(R_prev, R_cur)
@@ -424,11 +408,6 @@ class Trainer(Worker):
                     raise ValueError("pred_f2f_r:\n{}".format(pred_f2f_r))
 
                 pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
-
-                # gt_f2g_xx, pred_f2g_rr = self.se3_to_SE3(gt_f2f_x, gt_f2f_q)
-                # print(gt_f2g_xx - gt_f2g_x)
-                # print(pred_f2g_rr - gt_f2g_q)
-
                 loss = self.criterion(pred_f2f_x, pred_f2f_r,
                                       pred_f2g_x, pred_f2g_r,
                                       gt_f2f_x, gt_f2f_q,
@@ -448,7 +427,6 @@ class Trainer(Worker):
                     self.tensor_writer.add_scalar\
                         ("Val/Loss", losses.avg, step_val)
                     self.tensor_writer.flush()
-                return 0.
 
         self.post_valiate()
         return losses.avg
