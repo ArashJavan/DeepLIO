@@ -1,6 +1,6 @@
 datasets:
-  sequence-size: 2 # must be >= 1
-  combinations: [[0, 1], [1, 2]]
+  sequence-size: 3 # must be >= 1
+  combinations: [[0, 1], [1, 2], [2, 3]]
   kitti:
     root-path-sync: "datasets/KITTI/sync"
     root-path-unsync: "datasets/KITTI/extract"
@@ -38,15 +38,15 @@ deeplio:
   pretrained: false
   model-path: ""
   lidar-feat-net:
-    name: "lidar-feat-pointseg"
+    name: "lidar-feat-simple-1"
     pretrained: false
     model-path: ""
   imu-feat-net:
-    name: "imu-feat-fc"
+    name: "imu-feat-rnn"
     pretrained: false
     model-path: ""
   odom-feat-net:
-    name: "odom-feat-fc"
+    name: "odom-feat-rnn"
     pretrained: false
     model-path: ""
   fusion-net:
@@ -115,8 +115,8 @@ losses:
   hwsloss:
     params:
       learn: true
-      sx: 0.
-      sq: -2.
+      sx: -2.
+      sq: -3.
   lwsloss:
     params:
       beta: 1125.

@@ -2,9 +2,9 @@ import numpy as np
 import torch
 from torch.optim.lr_scheduler import _LRScheduler
 
-from deeplio.common.spatial import inv_SE3, rotation_matrix_to_quaternion, \
-    quaternion_exp_to_log, quaternion_log_to_exp, rotation_matrix_to_euler
+from liegroups.torch import SO3, utils
 
+from deeplio.common.spatial import *
 
 class DataCombiCreater(object):
     def __init__(self, combinations, device='cpu'):
@@ -102,7 +102,11 @@ class DataCombiCreater(object):
             T_ip1 = T_global[combi[1]]
             T_i_ip1 = torch.matmul(T_i_inv, T_ip1)
             dx = T_i_ip1[:3, 3].contiguous()
-            dq = rotation_matrix_to_euler(T_i_ip1[:3, :3].unsqueeze(0).contiguous()).squeeze()
+            dq = SO3.from_matrix(T_i_ip1[:3, :3]).log() # rotation_matrix_exp_to_log(T_i_ip1[:3, :3].unsqueeze(0).contiguous()).squeeze()
+
+            if torch.isnan(dq).any() or torch.isinf(dq).any():
+                raise ValueError("gt-f2f:\n{}".format(dq))
+
             #dq = quaternion_exp_to_log(dq).squeeze()
             state_f2f.append(torch.cat([dx, dq]))
 

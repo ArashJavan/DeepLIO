@@ -12,6 +12,8 @@ from torchvision.utils import make_grid
 
 from pytorch_model_summary import summary
 
+from liegroups.torch import SO3
+
 from deeplio import datasets as ds
 from deeplio.common import spatial, utils
 from deeplio.losses import get_loss_function
@@ -334,11 +336,11 @@ class Trainer(Worker):
             for s in range(seq_size):
                 t_cur = f2f_x[b, s]
                 #q_cur = spatial.euler_to_rotation_matrix (f2f_r[b, s])
-                euler_cur = f2f_r[b, s]
-                R_cur = spatial.euler_to_rotation_matrix(euler_cur.unsqueeze(0)).squeeze() # spatial.quaternion_to_rotation_matrix(q_cur)
+                w_cur = f2f_r[b, s]
+                R_cur = SO3.exp(w_cur).as_matrix() # spatial.quaternion_to_rotation_matrix(q_cur)
 
                 if not torch.isclose(torch.det(R_cur), torch.FloatTensor([1.]).to(self.device)).all():
-                    raise ValueError("Det error:\nR\n{}\nq:\n{}".format(R_cur, euler_cur))
+                    raise ValueError("Det error:\nR\n{}\nq:\n{}".format(R_cur, w_cur))
 
                 t_prev = torch.matmul(R_prev, t_cur) + t_prev
                 R_prev = torch.matmul(R_prev, R_cur)
