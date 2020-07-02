@@ -85,7 +85,7 @@ def main(args):
             imgs_normals = torch.cat(imgs_normals, dim=1)
             imgs_normals = imgs_normals.permute(1,2, 0)
 
-            fig, ax = plt.subplots(3, 1, figsize=(15, 7))
+            fig, ax = plt.subplots(3, 1, figsize=(10, 10))
             ax[0].set_title("XYZ, mean:{:.4f}, std:{:.4f}".format(ims_xyz.mean(), ims_xyz.std()), fontsize=5)
             ax[0].axis('off')
             imd = ax[0].imshow(torch.abs(ims_xyz) / ims_xyz.max())
@@ -96,8 +96,8 @@ def main(args):
             ax[1].axis('off')
             #fig.colorbar(imn, ax=ax[1])
 
-            ax[2].hist(ims_xyz.flatten(), bins=50, alpha=0.5, label="xyz", density=True)
-            ax[2].hist(imgs_normals.flatten(), bins=50, alpha=0.5, label="normals", density=True)
+            ax[2].hist(ims_xyz.flatten(), bins=10, alpha=0.5, label="xyz", density=True)
+            ax[2].hist(imgs_normals.flatten(), bins=10, alpha=0.5, label="normals", density=True)
             ax[2].legend()
 
             fname = "{}/{}_{}_{}_{}.png".format(OUTPUT_PATH, idx, index, date, drive)

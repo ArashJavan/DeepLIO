@@ -201,7 +201,7 @@ class Kitti(data.Dataset):
     # In unsynced KITTI raw dataset are some timestamp holes - i.g. 2011_10_03_27
     # e.g. there is no corresponding IMU/GPS measurment to some velodyne frames,
     # We set the min. no. so we can check and ignore these holes.
-    MIN_NUM_OXT_SAMPLES = 10
+    DEFAULT_NUM_OXT_SAMPLES = 11
 
     def __init__(self, config, ds_type='train', transform=None, has_imu=True, has_lidar=True):
         """
@@ -311,16 +311,19 @@ class Kitti(data.Dataset):
             oxt_indices = np.argwhere(mask).flatten()
             len_oxt = len(oxt_indices)
 
-            if (len_oxt== 0) or (len_oxt < self.MIN_NUM_OXT_SAMPLES):
-                self.logger.debug("Not enough OXT-samples: DS: {}_{}, len:{}, velo-timestamps: {}-{}".
+            if (len_oxt== 0):
+                self.logger.debug("No OXT-samples: DS: {}_{}, len:{}, velo-timestamps: {}-{}".
                                   format(dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
-                imu_values = np.zeros((self.MIN_NUM_OXT_SAMPLES, 6), dtype=np.float)
+                imu_values = np.zeros((self.DEFAULT_NUM_OXT_SAMPLES, 6), dtype=np.float)
                 valids.append(False)
             else:
                 oxts = dataset.oxts_unsync[oxt_indices]
                 imu_values = np.array([[oxt[0].ax, oxt[0].ay, oxt[0].az,
                                         oxt[0].wx, oxt[0].wy, oxt[0].wz]
                                        for oxt in oxts], dtype=np.float)
+                imu_values = np.pad(imu_values, ((0, np.max(self.DEFAULT_NUM_OXT_SAMPLES - len_oxt, 0)), (0, 0)))
+                if self.DEFAULT_NUM_OXT_SAMPLES < len_oxt:
+                    imu_values = imu_values[0:self.DEFAULT_NUM_OXT_SAMPLES, :]
                 valids.append(True)
             imus.append(imu_values)
         return imus, valids

@@ -9,7 +9,7 @@ datasets:
     crop-factors: [0, 0] # [0, 4] # top, left
     fov-up: 3.
     fov-down: -25.
-    max-depth: 80.
+    max-depth: 50.
     min-depth: 1.
     inverse-depth: true
     train:
@@ -19,7 +19,7 @@ datasets:
     test:
       #2011-10-03: [27, 42, 34]
       #2011-09-30: [16, 33, 34]
-      2011-09-30: [18]
+      2011-09-30: [18, 33]
     validation:
       #2011-09-26: [23, 39]
       2011-09-30: [33]
@@ -60,7 +60,7 @@ lidar-feat-simple-0:
 
 # feature network simple0 with bypassed conv layers
 lidar-feat-simple-1:
-  dropout: 0.
+  dropout: 0.2
   fusion: add # [cat, sub, add]
   bypass: true
 
@@ -83,10 +83,10 @@ imu-feat-fc:  # FC
 imu-feat-rnn: # RNN
   type: "lstm"
   input-size: 6  # !fixed! do not chanage
-  hidden-size: 6
+  hidden-size: 256
   num-layers: 2
   bidirectional: false
-  dropout: 0.
+  dropout: 0.2
 
 ### Fusion-Layer for DeepLIO Net ###########################
 fusion-layer-cat:
@@ -107,7 +107,7 @@ odom-feat-rnn:
   hidden-size: 128
   num-layers: 2
   bidirectional: true
-  dropout: 0.
+  dropout: 0.2
 
 ### Loss Configurations ###########################
 losses:

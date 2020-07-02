@@ -14,6 +14,8 @@ import torch
 import torch.utils.data
 from torch.utils import tensorboard
 
+from liegroups.torch import SO3
+
 from deeplio import datasets as ds
 from deeplio.common import spatial
 from deeplio.models import nets
@@ -138,11 +140,11 @@ class Tester(Worker):
 
                 # compute model predictions and loss
                 pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
-                pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
-                # pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+                #pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+                pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
 
                 loss = self.criterion(pred_f2f_x, pred_f2f_r,
-                                      gt_f2g_x, gt_f2g_q,
+                                      pred_f2g_x, pred_f2g_r,
                                       gt_f2f_x, gt_f2f_q,
                                       gt_f2g_x, gt_f2g_q)
 
@@ -185,6 +187,10 @@ class Tester(Worker):
                 pred_f2f_x = pred_f2f_x.detach().cpu().squeeze()
                 pred_f2f_r = pred_f2f_r.detach().cpu().squeeze()
 
+                #if not np.all(data['valids']):
+                #    pred_f2f_x = gt_x
+                #    pred_f2f_r = gt_q
+
                 T_local = np.identity(4)
 
                 # tranlation
@@ -193,13 +199,13 @@ class Tester(Worker):
 
                 if self.args.param == 'xq':
                     T_local[:3, 3] = pred_f2f_x.numpy()
-                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_f2f_r).numpy()
+                    T_local[:3, :3] = SO3.exp(pred_f2f_r).as_matrix().numpy() # spatial.quaternion_to_rotation_matrix(pred_f2f_r).numpy()
                 elif self.args.param == 'x':
                     T_local[:3, 3] = pred_f2f_x.numpy()
-                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
+                    T_local[:3, :3] = SO3.exp(gt_q).as_matrix().numpy() # spatial.quaternion_to_rotation_matrix(gt_q).numpy()
                 elif self.args.param == 'q':
                     T_local[:3, 3] = gt_x.numpy()
-                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_f2f_r).numpy()
+                    T_local[:3, :3] = SO3.exp(pred_f2f_r).as_matrix().numpy()
                 else:
                     T_local[:3, 3] = gt_x.numpy()
                     T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
@@ -217,6 +223,36 @@ class Tester(Worker):
 
         if curr_seq is not None:
             curr_seq.write_to_file()
+
+    def se3_to_SE3(self, f2f_x, f2f_r):
+        batch_size, seq_size, _ = f2f_x.shape
+
+        f2g_q = torch.zeros((batch_size, seq_size, 4), dtype=f2f_x.dtype, device=f2f_x.device)
+        f2g_x = torch.zeros((batch_size, seq_size, 3), dtype=f2f_x.dtype, device=f2f_x.device)
+
+        for b in range(batch_size):
+            R_prev = torch.zeros((3, 3), dtype=f2f_x.dtype, device=f2f_x.device)
+            R_prev[:] = torch.eye(3, dtype=f2f_x.dtype, device=f2f_x.device)
+            t_prev = torch.zeros((3), dtype=f2f_x.dtype, device=f2f_x.device)
+
+            for s in range(seq_size):
+                t_cur = f2f_x[b, s]
+                #q_cur = spatial.euler_to_rotation_matrix (f2f_r[b, s])
+                w_cur = f2f_r[b, s]
+                R_cur = SO3.exp(w_cur).as_matrix() # spatial.quaternion_to_rotation_matrix(q_cur)
+
+                if not torch.isclose(torch.det(R_cur), torch.FloatTensor([1.]).to(self.device)).all():
+                    raise ValueError("Det error:\nR\n{}\nq:\n{}".format(R_cur, w_cur))
+
+                t_prev = torch.matmul(R_prev, t_cur) + t_prev
+                R_prev = torch.matmul(R_prev, R_cur)
+
+                if not torch.isclose(torch.det(R_prev), torch.FloatTensor([1.]).to(self.device)).all():
+                    raise ValueError("Det error:\nR\n{}".format(R_prev))
+
+                f2g_q[b, s] = spatial.rotation_matrix_to_quaternion(R_prev)
+                f2g_x[b, s] = t_prev
+        return f2g_x, f2g_q
 
     def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
         pred_x = None
