@@ -12,6 +12,8 @@ from torchvision.utils import make_grid
 
 from pytorch_model_summary import summary
 
+from liegroups.torch import SO3
+
 from deeplio import datasets as ds
 from deeplio.common import spatial, utils
 from deeplio.losses import get_loss_function
@@ -48,9 +50,12 @@ class Trainer(Worker):
         self.model = nets.get_model(input_shape=(self.n_channels, self.im_height_model, self.im_width_model),
                                     cfg=self.cfg, device=self.device)
 
-        self.optimizer = create_optimizer(self.model.parameters(), self.cfg, args)
-        self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=self.epochs, end_learning_rate=0.00005, power=2.0)
         self.criterion = get_loss_function(self.cfg, args.device)
+        self.optimizer = create_optimizer([{'params': self.model.parameters()},
+                                           {'params': self.criterion.parameters()}]
+                                          , self.cfg, args)
+        self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=self.epochs, end_learning_rate=0.00005,
+                                              power=2.0)
 
         self.has_lidar = True if self.model.lidar_feat_net is not None else False
         self.has_imu = True if self.model.imu_feat_net is not None else False
@@ -61,7 +66,8 @@ class Trainer(Worker):
                                                             num_workers=self.num_workers,
                                                             shuffle=True,
                                                             worker_init_fn=worker_init_fn,
-                                                            collate_fn=ds.deeplio_collate)
+                                                            collate_fn=ds.deeplio_collate,
+                                                            drop_last=True)
 
         self.val_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='validation',
                                     has_imu=self.has_imu, has_lidar=self.has_lidar)
@@ -69,7 +75,8 @@ class Trainer(Worker):
                                                           num_workers=self.num_workers,
                                                           shuffle=True,
                                                           worker_init_fn=worker_init_fn,
-                                                          collate_fn = ds.deeplio_collate)
+                                                          collate_fn = ds.deeplio_collate,
+                                                          drop_last=True)
 
         self.data_permuter = DataCombiCreater(combinations=self.combinations,
                                               device=self.device)
@@ -144,6 +151,7 @@ class Trainer(Worker):
                 'state_dict': self.model.state_dict(),
                 'best_acc': self.best_acc,
                 'optimizer' : self.optimizer.state_dict(),
+                'criterion': self.criterion.state_dict(),
             }, is_best, filename)
 
             feat_nets = self.model.get_feat_networks()
@@ -160,13 +168,11 @@ class Trainer(Worker):
         self.close()
 
     def train(self, epoch):
-        writer = self.tensor_writer
         optimizer = self.optimizer
-        criterion = self.criterion
-        model = self.model
 
         # switch to train mode
-        model.train()
+        self.model.train()
+        self.criterion.train()
 
         batch_time = AverageMeter('Time', ':6.3f')
         data_time = AverageMeter('Data', ':6.3f')
@@ -180,7 +186,8 @@ class Trainer(Worker):
             prefix="Epoch: [{}]".format(epoch))
 
         end = time.time()
-
+        #torch.autograd.set_detect_anomaly(True)
+        #with torch.autograd.detect_anomaly():
         for idx, data in enumerate(self.train_dataloader):
 
             # check if we can run or are we stopped
@@ -206,25 +213,73 @@ class Trainer(Worker):
             data_time.update(time.time() - end)
 
             # prepare data
-            imgs, untrans_imgs, imus, gts_local, gts_global = self.data_permuter(data)
+            self.data_permuter(data)
+            imgs = self.data_permuter.res_imgs
+            normals = self.data_permuter.res_normals
+            imus = self.data_permuter.res_imu
+            imgs_org = self.data_permuter.res_img_org
+            normals_org = self.data_permuter.res_normals_org
+            gts_f2f = self.data_permuter.res_gt_f2f
+            gts_f2g = self.data_permuter.res_gt_f2g
+            gts_global = self.data_permuter.res_gt_global
+
+            if torch.isnan(gts_f2f).any() or torch.isinf(gts_f2f).any():
+                raise ValueError("gt-f2f:\n{}".format(gts_f2f))
+            if torch.isnan(gts_f2g).any() or torch.isinf(gts_f2g).any() :
+                raise ValueError("gt-f2g:\n{}".format(gts_f2g))
+
+            if torch.isnan(normals).any() or torch.isinf(normals).any():
+                raise ValueError("normals:\n{}".format(normals))
+            if torch.isnan(imgs).any() or torch.isinf(imgs).any():
+                raise ValueError("imgs:\n{}".format(imgs))
 
             # prepare ground truth tranlational and rotational part
-            gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
-            gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
+            gt_f2f_x = gts_f2f[:, :, 0:3]
+            gt_f2f_q = gts_f2f[:, :, 3:]
+            gt_f2g_x = gts_f2g[:, :, 0:3]
+            gt_f2g_q = gts_f2g[:, :, 3:7]
 
             # compute model predictions and loss
-            pred_x, pred_q = self.model([imgs, imus])
-            loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+            pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
+            #pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+
+            if torch.isnan(pred_f2f_x).any() or torch.isinf(pred_f2f_x).any():
+                raise ValueError("pred_f2f_x:\n{}".format(pred_f2f_x))
+            if torch.isnan(pred_f2f_r).any() or torch.isinf(pred_f2f_r).any():
+                raise ValueError("pred_f2f_r:\n{}".format(pred_f2f_r))
+
+            pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+
+            # gt_f2g_xx, pred_f2g_rr = self.se3_to_SE3(gt_f2f_x, gt_f2f_q)
+            # print(gt_f2g_xx - gt_f2g_x)
+            # print(pred_f2g_rr - gt_f2g_q)
+
+            loss = self.criterion(pred_f2f_x, pred_f2f_r,
+                                  pred_f2g_x, pred_f2g_r,
+                                  gt_f2f_x, gt_f2f_q,
+                                  gt_f2g_x, gt_f2g_q)
 
             # measure accuracy and record loss
-            losses.update(loss.detach().item(), len(pred_x))
+            losses.update(loss.detach().item(), self.batch_size*self.seq_size)
             #pred_disp.update(preds.detach().cpu().numpy(), gts[0].cpu().numpy())
 
             # zero the parameter gradients, compute gradient and optimizer step
-            optimizer.zero_grad()
+            self.optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
-            optimizer.step()
+
+            param_means = torch.FloatTensor([param.mean().detach() for param in self.model.parameters() if param is not None])
+            if torch.isnan(param_means).any():
+                raise ValueError("param_means:\n{}".format(param_means))
+
+            param_grad_means = torch.FloatTensor([param.grad.mean().detach() for param in self.model.parameters() if param.grad is not None])
+            if torch.isnan(param_grad_means).any():
+                raise ValueError("param_grad_means:\n{}".format(param_grad_means))
+
+            if idx % 10 == 0:
+                pass # print("param-mean: {}, grad-mean: {}".format(param_means.mean().data, param_grad_means.mean().data))
+
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.)
+            self.optimizer.step()
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -234,55 +289,70 @@ class Trainer(Worker):
 
                 if idx % (5 * self.args.print_freq) == 0:
                     # print some prediction results
-                    x = pred_x[0:2].detach().cpu().flatten()
-                    q = spatial.normalize_quaternion(pred_q[0:2].detach().cpu()).flatten()
-                    x_gt = gt_local_x[0:2].detach().cpu().flatten()
-                    q_gt = gt_local_q[0:2].detach().cpu().flatten()
+                    x = pred_f2g_x[0, 0:2].detach().cpu().flatten()
+                    q = pred_f2g_r[0, 0:2].detach().cpu().flatten()
+                    x_gt = gt_f2g_x[0:2].detach().cpu().flatten()
+                    q_gt = gt_f2g_q[0:2].detach().cpu().flatten()
 
                     self.logger.print("x-hat: [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]"
                                       "\nx-gt:  [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]".
                                       format(x[0], x[1], x[2], x[3], x[4], x[5],
                                              x_gt[0], x_gt[2], x_gt[2], x_gt[3], x_gt[4], x_gt[5]))
 
-                    self.logger.print("q-hat: [{:.4f},{:.4f},{:.4f},{:.4}], [{:.4f},{:.4f},{:.4f},{:.4}]"
-                                      "\nq-gt:  [{:.4f},{:.4f},{:.4f},{:.4}], [{:.4f},{:.4f},{:.4f},{:.4}]".
+                    self.logger.print("q-hat: [{:.4f},{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f},{:.4f}]"
+                                      "\nq-gt:  [{:.4f},{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f},{:.4f}]".
                                       format(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7],
-                                             q_gt[0], q_gt[1], q_gt[2], q_gt[3], q_gt[4],q_gt[5], q_gt[6], q_gt[7]))
+                                             q_gt[0], q_gt[1], q_gt[2], q_gt[3], q_gt[4], q_gt[5], q_gt[6], q_gt[7]))
 
                 progress.display(idx)
+                grad_norm = calc_grad_norm(self.model.parameters())
 
                 ### update tensorboard
                 self.step_val = epoch * len(self.train_dataloader) + idx
                 self.tensor_writer.add_scalar("Train/Loss", losses.avg, self.step_val)
-                self.tensor_writer.add_scalar("Train/Gradnorm", calc_grad_norm(self.model.parameters()), self.step_val)
+                self.tensor_writer.add_scalar("Train/Gradnorm", grad_norm, self.step_val)
+                self.tensor_writer.add_scalar("Train/sx", self.criterion.sx.data, self.step_val)
+                self.tensor_writer.add_scalar("Train/sq", self.criterion.sq.data, self.step_val)
                 self.tensor_writer.flush()
+
             self.data_last = data
 
         self.post_train_iter()
 
-        # save infos to -e.g. gradient hists and images to tensorbaord and the end of training
-        # b, s, c, h, w = np.asarray(data_last['images'].shape)
-        # imgs = data_last['images'].reshape(b*s, c, h, w)
-        # imgs_remossion = imgs[:, 1, :, :]
-        # imgs_remossion = [torch.from_numpy(utils.colorize(img)).permute(2, 0, 1) for img in imgs_remossion]
-        # imgs_remossion = torch.stack(imgs_remossion)
-        # imgs_remossion = make_grid(imgs_remossion, nrow=2)
-        # self.tensor_writer.add_image("Images/Remissions", imgs_remossion, global_step=step_val)
-        #
-        # imgs_range = imgs[:, 0, :, :]
-        # imgs_range = [torch.from_numpy(utils.colorize(img, cmap='viridis')).permute(2, 0, 1) for img in imgs_range]
-        # imgs_range = torch.stack(imgs_range)
-        # imgs_range = make_grid(imgs_range, nrow=2)
-        # self.tensor_writer.add_image("Images/Range", imgs_range, global_step=step_val)
-
         for tag, param in self.model.named_parameters():
             self.tensor_writer.add_histogram(tag, param.data.detach().cpu().numpy(), self.step_val)
 
-    def validate(self, epoch):
-        writer = self.tensor_writer
-        criterion = self.criterion
-        model = self.model
+    def se3_to_SE3(self, f2f_x, f2f_r):
+        batch_size, seq_size, _ = f2f_x.shape
 
+        f2g_q = torch.zeros((batch_size, seq_size, 4), dtype=f2f_x.dtype, device=f2f_x.device)
+        f2g_x = torch.zeros((batch_size, seq_size, 3), dtype=f2f_x.dtype, device=f2f_x.device)
+
+        for b in range(batch_size):
+            R_prev = torch.zeros((3, 3), dtype=f2f_x.dtype, device=f2f_x.device)
+            R_prev[:] = torch.eye(3, dtype=f2f_x.dtype, device=f2f_x.device)
+            t_prev = torch.zeros((3), dtype=f2f_x.dtype, device=f2f_x.device)
+
+            for s in range(seq_size):
+                t_cur = f2f_x[b, s]
+                #q_cur = spatial.euler_to_rotation_matrix (f2f_r[b, s])
+                w_cur = f2f_r[b, s]
+                R_cur = SO3.exp(w_cur).as_matrix() # spatial.quaternion_to_rotation_matrix(q_cur)
+
+                if not torch.isclose(torch.det(R_cur), torch.FloatTensor([1.]).to(self.device)).all():
+                    raise ValueError("Det error:\nR\n{}\nq:\n{}".format(R_cur, w_cur))
+
+                t_prev = torch.matmul(R_prev, t_cur) + t_prev
+                R_prev = torch.matmul(R_prev, R_cur)
+
+                if not torch.isclose(torch.det(R_prev), torch.FloatTensor([1.]).to(self.device)).all():
+                    raise ValueError("Det error:\nR\n{}".format(R_prev))
+
+                f2g_q[b, s] = spatial.rotation_matrix_to_quaternion(R_prev)
+                f2g_x[b, s] = t_prev
+        return f2g_x, f2g_q
+
+    def validate(self, epoch):
         batch_time = AverageMeter('Time', ':6.3f')
         losses = AverageMeter('Loss', ':.4e')
         progress = ProgressMeter(
@@ -292,7 +362,8 @@ class Trainer(Worker):
             prefix='Test: ')
 
         # switch to evaluate mode
-        model.eval()
+        self.model.eval()
+        self.criterion.eval()
 
         with torch.no_grad():
             end = time.time()
@@ -303,18 +374,49 @@ class Trainer(Worker):
                     return 0
 
                 # prepare data
-                imgs, untrans_imgs, imus, gts_local, gts_global = self.data_permuter(data)
+                self.data_permuter(data)
+                imgs = self.data_permuter.res_imgs
+                normals = self.data_permuter.res_normals
+                imus = self.data_permuter.res_imu
+                imgs_org = self.data_permuter.res_img_org
+                normals_org = self.data_permuter.res_normals_org
+                gts_f2f = self.data_permuter.res_gt_f2f
+                gts_f2g = self.data_permuter.res_gt_f2g
+                gts_global = self.data_permuter.res_gt_global
+
+                if torch.isnan(gts_f2f).any() or torch.isinf(gts_f2f).any():
+                    raise ValueError("gt-f2f:\n{}".format(gts_f2f))
+                if torch.isnan(gts_f2g).any() or torch.isinf(gts_f2g).any():
+                    raise ValueError("gt-f2g:\n{}".format(gts_f2g))
+
+                if torch.isnan(normals).any() or torch.isinf(normals).any():
+                    raise ValueError("normals:\n{}".format(normals))
+                if torch.isnan(imgs).any() or torch.isinf(imgs).any():
+                    raise ValueError("imgs:\n{}".format(imgs))
 
                 # prepare ground truth tranlational and rotational part
-                gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
-                gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
+                gt_f2f_x = gts_f2f[:, :, 0:3]
+                gt_f2f_q = gts_f2f[:, :, 3:]
+                gt_f2g_x = gts_f2g[:, :, 0:3]
+                gt_f2g_q = gts_f2g[:, :, 3:7]
 
                 # compute model predictions and loss
-                pred_x, pred_q = self.model([imgs, imus])
-                loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+                pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
+                # pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+
+                if torch.isnan(pred_f2f_x).any() or torch.isinf(pred_f2f_x).any():
+                    raise ValueError("pred_f2f_x:\n{}".format(pred_f2f_x))
+                if torch.isnan(pred_f2f_r).any() or torch.isinf(pred_f2f_r).any():
+                    raise ValueError("pred_f2f_r:\n{}".format(pred_f2f_r))
+
+                pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+                loss = self.criterion(pred_f2f_x, pred_f2f_r,
+                                      pred_f2g_x, pred_f2g_r,
+                                      gt_f2f_x, gt_f2f_q,
+                                      gt_f2g_x, gt_f2g_q)
 
                 # measure accuracy and record loss
-                losses.update(loss.detach().item(), len(pred_x))
+                losses.update(loss.detach().item(), self.batch_size*self.seq_size)
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)
@@ -331,13 +433,6 @@ class Trainer(Worker):
         self.post_valiate()
         return losses.avg
 
-    def lr_adjuster(self, epoch):
-        curr_lr = self.lr_scheduler.get_last_lr()[0]
-        if epoch > 0 and (epoch % self.args.lr_decay == 0):
-            if curr_lr > 1e-5:
-                return 0.5
-        return 1.
-
     def save_checkpoint(self, state, is_best, filename="checkpoint"):
         file_path = '{}/{}.tar'.format(self.checkpoint_dir, filename)
         torch.save(state, file_path)
@@ -353,11 +448,11 @@ class TrainerDeepLIO(Trainer):
         # log the network structure and number of params
         # log the network structure and number of params
         self.logger.info("{}: Network architecture:".format(self.model.name))
-        lidar_data = torch.randn((1, self.seq_size+1, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
-        imu_data = torch.rand((1, self.seq_size, 2, 6)).to(self.device)
+        xyz_data = torch.randn((self.batch_size, self.seq_size, self.timestamps, self.n_channels, self.im_height_model, self.im_width_model)).to(self.device)
+        normal_data =  xyz_data
+        imu_data = torch.rand((self.batch_size,  self.seq_size, 10, 6)).to(self.device)
         self.model.eval()
-        self.logger.print(summary(self.model, [lidar_data, imu_data]))
-
+        self.logger.print(summary(self.model, [[xyz_data, normal_data], imu_data]))
 
     def post_train_iter(self):
         if self.has_lidar:

@@ -2,44 +2,72 @@ import numpy as np
 import torch
 from torch.optim.lr_scheduler import _LRScheduler
 
-from deeplio.common.spatial import inv_SE3, rotation_matrix_to_quaternion
+from liegroups.torch import SO3, utils
 
+from deeplio.common.spatial import *
 
 class DataCombiCreater(object):
     def __init__(self, combinations, device='cpu'):
         self.combinations = combinations
         self.device = device
+        self.seq_size = get_config_container().seq_size
+
+        self.res_imgs = None
+        self.res_img_org = None
+        self.res_normals = None
+        self.res_normals_org = None
+        self.res_imu = None
+        self.res_gt_f2f = None
+        self.res_gt_f2g = None
+        self.res_gt_global = None
 
     def process(self, data):
-        res_imgs = []
-        res_untrans_imgs = []
-        res_imu = []
-        res_gt_local = []
-        res_gt_global = []
+        imgs = []
+        imgs_org = []
+        normals = []
+        normals_org = []
+        imus = []
+        gt_f2f = []
+        gt_f2g = []
 
         has_imgs = 'images' in data
         has_imu = 'imus' in data
 
         if has_imgs:
-            res_imgs = data['images'].to(self.device)
-            res_untrans_imgs = data['untrans-images'].to(self.device)
+            imgs, normals = self.process_images(data['images'].to(self.device))
+            imgs_org, normals_org = self.process_images(data['untrans-images'].to(self.device))
 
         n_batches = len(data['gts'])
         for b in range(n_batches):
             gts = data['gts'][b]
-            gts_local = self.process_ground_turth(gts)
-            res_gt_local.append(gts_local)
+            gts_local, gts_glob = self.process_ground_turth(gts)
+            gt_f2f.append(gts_local)
+            gt_f2g.append(gts_glob)
 
             # only in deeplio and deepio we have imus
             if has_imu:
-                imus = data['imus'][b]
-                res = self.process_imus(imus)
-                res_imu.append(res)
+                res = self.process_imus(data['imus'][b])
+                imus.append(res)
                 #res_imu = [torch.stack(imu).to(self.device, non_blocking=True) for imu_seq in res_imu for imu in imu_seq]
 
-        res_gt_global = data['gts'].to(self.device)
-        res_gt_local = torch.stack(res_gt_local).to(self.device, non_blocking=True)
-        return res_imgs, res_untrans_imgs, res_imu, res_gt_local, res_gt_global
+        gt_global = data['gts'].to(self.device)
+        gt_f2f = torch.stack(gt_f2f).to(self.device, non_blocking=True)
+        gt_f2g = torch.stack(gt_f2g).to(self.device, non_blocking=True)
+
+        self.res_imgs = imgs
+        self.res_img_org = imgs_org
+        self.res_normals = normals
+        self.res_normals_org = normals_org
+        self.res_imu = imus
+        self.res_gt_f2f = gt_f2f
+        self.res_gt_f2g = gt_f2g
+        self.res_gt_global = gt_global
+
+    def process_images(self, imgs):
+        imgs = imgs[:, self.combinations] # dim=[BxSxTxCxHxW]
+        xyz_imgs = imgs[:, :, :, 0:3]
+        normal_imgs = imgs[:, :, :, 3:].contiguous()
+        return xyz_imgs, normal_imgs
 
     def process_imus(self, imus):
         imu_seq = []
@@ -67,19 +95,35 @@ class DataCombiCreater(object):
             v = gt[12:]
             v_global.append(v)
 
-        state_local = []
+        state_f2f = []
         for combi in self.combinations:
             T_i = T_global[combi[0]]
             T_i_inv = inv_SE3(T_i)
             T_ip1 = T_global[combi[1]]
             T_i_ip1 = torch.matmul(T_i_inv, T_ip1)
             dx = T_i_ip1[:3, 3].contiguous()
-            dq = rotation_matrix_to_quaternion(T_i_ip1[:3, :3].contiguous())
-            dv = v_global[combi[1]] - v_global[combi[0]]
-            state_local.append(torch.cat([dx, dq, dv]))
+            dq = SO3.from_matrix(T_i_ip1[:3, :3]).log() # rotation_matrix_exp_to_log(T_i_ip1[:3, :3].unsqueeze(0).contiguous()).squeeze()
 
-        gt_local = torch.stack(state_local).to(self.device, non_blocking=True)
-        return gt_local
+            if torch.isnan(dq).any() or torch.isinf(dq).any():
+                raise ValueError("gt-f2f:\n{}".format(dq))
+
+            #dq = quaternion_exp_to_log(dq).squeeze()
+            state_f2f.append(torch.cat([dx, dq]))
+
+        T_0 = T_global[0]
+        T_0_inv = inv_SE3(T_0)
+        state_f2g = []
+        for combi in self.combinations:
+            T_ip1 = T_global[combi[1]]
+            T_i_ip1 = torch.matmul(T_0_inv, T_ip1)
+            dx = T_i_ip1[:3, 3].contiguous()
+            dq = rotation_matrix_to_quaternion(T_i_ip1[:3, :3].contiguous())
+            state_f2g.append(torch.cat([dx, dq]))
+
+        gt_f2f = torch.stack(state_f2f).to(self.device, non_blocking=True)
+        gt_f2g = torch.stack(state_f2g).to(self.device, non_blocking=True)
+
+        return gt_f2f, gt_f2g
 
     def __call__(self, args):
         return self.process(args)
@@ -129,6 +173,7 @@ class ConfigContainer:
         self.curr_dataset_cfg = self.cfg['datasets'][self.cfg['current-dataset']]
         self.combinations = np.array(self.ds_cfg['combinations'])
         self.seq_size = len(self.combinations) # self.ds_cfg['sequence-size']
+        self.timestamps = len(self.combinations[0])
         self.device = self.args.device
         self.batch_size = self.args.batch_size
         self.seq_size_data = self.ds_cfg['sequence-size']
@@ -147,5 +192,4 @@ def build_config_container(cfg, args):
     global config_container
     config_container = ConfigContainer(cfg, args)
     return config_container
-
 

@@ -25,8 +25,7 @@ def set_seed(seed=42):
 
 
 def worker_init_fn(worker_id):
-    # set_seed(seed=SEED)
-    pass
+    set_seed(seed=SEED)
 
 
 class Worker:
@@ -44,6 +43,7 @@ class Worker:
         self.ds_cfg = config_container.ds_cfg #  self.cfg['datasets']
         self.curr_dataset_cfg = config_container.curr_dataset_cfg #  self.cfg['datasets'][self.cfg['current-dataset']]
         self.seq_size = config_container.seq_size # self.ds_cfg['sequence-size']
+        self.timestamps = config_container.timestamps
         self.seq_size_data = config_container.seq_size_data
         self.combinations = config_container.combinations # np.array(self.ds_cfg['combinations'])
         self.device = config_container.device
@@ -58,6 +58,9 @@ class Worker:
         self.im_width_model = self.im_width - (2 * crop_width)
 
         self.n_channels = len(self.cfg['channels'])
+        # check if we have normals
+        if self.n_channels == 6:
+            self.n_channels = 3
 
         # create output folder structure
         self.out_dir = "{}/outputs/{}_{}".format(self.content_dir, self.ACTION, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
@@ -70,9 +73,10 @@ class Worker:
         self.tensor_writer = SummaryWriter(log_dir=self.runs_dir)
 
         torch.cuda.empty_cache()
-        cudnn.benchmark = True
+        cudnn.benchmark = False
+        cudnn.deterministic = True
 
-        #set_seed(seed=SEED)
+        set_seed(seed=SEED)
 
         flog_name = "{}/{}_{}.log".format(log_dir, self.ACTION, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
         if args.debug:

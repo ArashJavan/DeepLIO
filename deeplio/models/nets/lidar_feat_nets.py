@@ -11,12 +11,13 @@ from ..misc import get_config_container
 class BaseLidarFeatNet(BaseNet):
     def __init__(self, input_shape, cfg):
         super(BaseLidarFeatNet, self).__init__()
-        self.input_shape = input_shape
         self.p = cfg['dropout']
         self.fusion = cfg['fusion']
         self.cfg_container = get_config_container()
         self.seq_size = self.cfg_container.seq_size
+        self.timestamps = self.cfg_container.timestamps
         self.combinations = self.cfg_container.combinations
+        self.input_shape = input_shape
         self.output_shape = None
 
     def combine_data(self, x):
@@ -30,10 +31,11 @@ class BaseLidarFeatNet(BaseNet):
 
     def calc_output_shape(self):
         c, h, w = self.input_shape
-        input = torch.rand((1, self.seq_size+1, c, h, w))
+        input1 = torch.rand((1, self.seq_size, self.timestamps, c, h, w))
+        input2 = torch.rand((1, self.seq_size, self.timestamps, c, h, w))
         self.eval()
         with torch.no_grad():
-            out = self.forward(input)
+            out = self.forward([input1, input2])
         return out.shape
 
     def get_output_shape(self):
@@ -46,13 +48,13 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         self.part = cfg['part'].lower()
         self.bn_d = bn_d
 
-        self.encoder = PSEncoder(input_shape, cfg)
+        c, h, w = self.input_shape
+
+        self.encoder1 = PSEncoder((2*c, h, w), cfg)
+        self.encoder2 = PSEncoder((2*c, h, w), cfg)
 
         # shapes of  x_1a, x_1b, x_se1, x_se2, x_se3, x_el
-        enc_out_shapes = self.encoder.get_output_shape()
-        if self.part == 'encoder+decoder':
-            self.decoder = PSDecoder(enc_out_shapes, cfg)
-            dec_out_shape = self.decoder.get_output_shape()
+        enc_out_shapes = self.encoder1.get_output_shape()
 
         # number of output channels in encoder
         b, c, h, w = enc_out_shapes[4]
@@ -80,27 +82,23 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         :return: outputs: features of dim [BxTxN]
         mask0: predicted mask to each time sequence
         """
-        batch_size = x.shape[0]
+        imgs_xyz, imgs_normals = x[0], x[1]
+        b, s, t, c, h, w = imgs_xyz.shape
+        imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
+        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
 
-        x_0, x_1 = self.combine_data(x)
-
-        x_mask_0 = torch.zeros((1), requires_grad=False)
-        x_mask_1 = torch.zeros((1), requires_grad=False)
-
-        x_1a_0, x_1b_0, x_se1_0, x_se2_0, x_se3_0, x_el_0 = self.encoder(x_0)
-        if self.part == 'encoder+decoder':
-            x_mask_0 = self.decoder([x_1a_0, x_1b_0, x_se1_0, x_se2_0, x_se3_0, x_el_0])
+        x_1a_0, x_1b_0, x_se1_0, x_se2_0, x_se3_0, x_el_0 = self.encoder1(imgs_xyz)
         x_feat_0 = x_se3_0
 
-        x_1a_1, x_1b_1, x_se1_1, x_se2_1, x_se3_1, x_el_1 = self.encoder(x_1)
-        if self.part == 'encoder+decoder':
-            x_mask_1 = self.decoder([x_1a_1, x_1b_1, x_se1_1, x_se2_1, x_se3_1, x_el_1])
+        x_1a_1, x_1b_1, x_se1_1, x_se2_1, x_se3_1, x_el_1 = self.encoder2(imgs_normals)
         x_feat_1 = x_se3_1
 
         if self.fusion == 'cat':
             x = torch.cat((x_feat_0, x_feat_1), dim=1)
+        elif self.fusion == 'add':
+            x = x_feat_0 + x_feat_1
         else:
-            x = torch.sub(x_feat_0, x_feat_1)
+            x = x_feat_0 - x_feat_1
 
         x = self.fire12(x)
         x = self.fire34(x)
@@ -109,14 +107,17 @@ class LidarPointSegFeat(BaseLidarFeatNet):
             x = self.drop(x)
 
         # reshape output to BxTxCxHxW
-        x = x.view(batch_size, self.seq_size, num_flat_features(x, 1))
+        x = x.view(b, s, num_flat_features(x, 1))
         return x
 
 
 class LidarSimpleFeat0(BaseLidarFeatNet):
     def __init__(self, input_shape, cfg):
         super(LidarSimpleFeat0, self).__init__(input_shape, cfg)
-        self.encoder = FeatureNetSimple0(self.input_shape)
+        c, h, w = self.input_shape
+
+        self.encoder1 = FeatureNetSimple0([2*c, h, w])
+        self.encoder2 = FeatureNetSimple0([2*c, h, w])
 
         if self.p > 0:
             self.drop = nn.Dropout(self.p)
@@ -129,22 +130,27 @@ class LidarSimpleFeat0(BaseLidarFeatNet):
         :return: outputs: features of dim [BxTxN]
         mask0: predicted mask to each time sequence
         """
-        batch_size = x.shape[0]
-        x_0, x_1 = self.combine_data(x)
+        imgs_xyz, imgs_normals = x[0], x[1]
 
-        x_feat_0 = self.encoder(x_0)
-        x_feat_1 = self.encoder(x_1)
+        b, s, t, c, h, w = imgs_xyz.shape
+        imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
+        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
+
+        x_feat_0 = self.encoder1(imgs_xyz)
+        x_feat_1 = self.encoder2(imgs_normals)
 
         if self.fusion == 'cat':
             x = torch.cat((x_feat_0, x_feat_1), dim=1)
+        elif self.fusion == 'add':
+            x = x_feat_0 + x_feat_1
         else:
-            x = torch.sub(x_feat_0, x_feat_1)
+            x = x_feat_0 - x_feat_1
 
         if self.p > 0.:
             x = self.drop(x)
 
         # reshape output to BxTxCxHxW
-        x = x.view(batch_size, self.seq_size, num_flat_features(x, 1))
+        x = x.view(b, s, num_flat_features(x, 1))
         return x
 
 
@@ -152,7 +158,10 @@ class LidarSimpleFeat1(BaseLidarFeatNet):
     def __init__(self, input_shape, cfg):
         super(LidarSimpleFeat1, self).__init__(input_shape, cfg)
         bypass = cfg['bypass']
-        self.encoder = FeatureNetSimple1(self.input_shape, bypass=bypass)
+        c, h, w = self.input_shape
+
+        self.encoder1 = FeatureNetSimple1([2*c, h, w], bypass=bypass)
+        self.encoder2 = FeatureNetSimple1([2*c, h, w], bypass=bypass)
 
         if self.p > 0:
             self.drop = nn.Dropout(self.p)
@@ -161,27 +170,32 @@ class LidarSimpleFeat1(BaseLidarFeatNet):
 
     def forward(self, x):
         """
-        :param inputs: images of dimension [BxTxCxHxW], where T is seq-size+1, e.g. 2+1
+        :param inputs: images of dimension [BxSxTxCxHxW], S:=Seq-length T:=#timestamps, e.g. 2+1
         :return: outputs: features of dim [BxTxN]
         mask0: predicted mask to each time sequence
         """
-        batch_size = x.shape[0]
-        x_0, x_1 = self.combine_data(x)
+        imgs_xyz, imgs_normals = x[0], x[1]
 
-        x_feat_0 = self.encoder(x_0)
-        x_feat_1 = self.encoder(x_1)
+        b, s, t, c, h, w = imgs_xyz.shape
+        imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
+        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
+
+        x_feat_0 = self.encoder1(imgs_xyz)
+        x_feat_1 = self.encoder2(imgs_normals)
 
         if self.fusion == 'cat':
-            x = torch.cat((x_feat_0, x_feat_1), dim=1)
+            y = torch.cat((x_feat_0, x_feat_1), dim=1)
+        elif self.fusion == 'add':
+            y = x_feat_0 + x_feat_1
         else:
-            x = torch.sub(x_feat_0, x_feat_1)
+            y = x_feat_0 - x_feat_1
 
         if self.p > 0.:
-            x = self.drop(x)
+            y = self.drop(y)
 
         # reshape output to BxTxCxHxW
-        x = x.view(batch_size, self.seq_size, num_flat_features(x, 1))
-        return x
+        y = y.view(b, s, num_flat_features(y, 1))
+        return y
 
 
 class FeatureNetSimple0(nn.Module):

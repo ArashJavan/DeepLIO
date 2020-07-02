@@ -20,8 +20,8 @@ import matplotlib.pyplot as plt
 
 from deeplio.datasets import KittiRawData
 
-CHANNEL_NAMES = ['x', 'y', 'z', 'rang', 'remission']
-PIVOT = 200
+CHANNEL_NAMES = ['x', 'y', 'z', 'remission', 'nx', 'ny', 'nz', 'range']
+PIVOT = 100
 
 
 def run_job(args):
@@ -47,7 +47,7 @@ def run_job(args):
     for i in tqdm.trange(length, desc=dataset.data_path_sync, position=bar_pos):
         im = dataset.get_velo_image(i)
         if cmd_args['inv_depth']:
-            im_depth = im[:, :, 3]
+            im_depth = im[:, :, -1]
             im_depth[im_depth > 0.] = 1 / im_depth[im_depth > 0.]
         im_channels = im.reshape(-1, num_channels).T
         pixel_num += (im.size / num_channels)
@@ -121,7 +121,7 @@ def main(args):
 
     if args['plot']:
         plt.ioff()
-        fig , ax = plt.subplots(2, 3, figsize=(10, 7))
+        fig , ax = plt.subplots(2, 4, figsize=(15, 10))
         ax = ax.flatten()
         for j in range(num_channels):
             ch_hist = np.array(channel_hist[j])
@@ -133,14 +133,15 @@ def main(args):
                                                                                           channel_mean[j],
                                                                                           channel_std[j]))
         fig.tight_layout()
-        fig.savefig("./histogram_mean_and_std.png")
+        fig.savefig("./histogram_mean_and_std.png", dpi=400)
 
+    np.set_printoptions(precision=4, suppress=True)
     with open("./mean_and_std.txt", 'w') as f:
-        f.write("mean: {}\nstd: {}\nimu-mean: {}, imu-std:{}".
+        f.write("mean: {}\nstd: {}\nimu-mean: {}\nimu-std:{}".
                 format(channel_mean, channel_std, imus_mean.mean(axis=0), imus_std.mean(axis=0)))
 
-    print("mean: {}".format(channel_mean))
-    print("std: {}".format(channel_std))
+    print("mean-image: {}".format(channel_mean))
+    print("std-image: {}".format(channel_std))
     print("imu-mean: {}".format(imus_mean.mean(axis=0)))
     print("imu-std: {}".format(imus_std.mean(axis=0)))
 

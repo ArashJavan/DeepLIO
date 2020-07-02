@@ -55,7 +55,7 @@ class DeepLIO(BaseDeepLIO):
         if self.p > 0:
             self.drop = nn.Dropout(self.p)
         self.fc_pos = nn.Linear(in_shape, 3)
-        self.fc_ori = nn.Linear(in_shape, 4)
+        self.fc_ori = nn.Linear(in_shape, 3)
 
     def forward(self, x):
         lidar_imgs = x[0]  # lidar image frames
@@ -82,8 +82,8 @@ class DeepLIO(BaseDeepLIO):
             x_odom = self.odom_feat_net(x_last_feat)
             x_last_feat = x_odom
 
-        b, s = x_last_feat.shape[0:2]
-        x_last_feat = x_last_feat.reshape(b*s, -1)
+        #b, s = x_last_feat.shape[0:2]
+        #x_last_feat = x_last_feat.reshape(b*s, -1)
         if self.p > 0.:
             x_last_feat = self.drop(x_last_feat)
 

@@ -2,6 +2,7 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from deeplio.common.spatial import normalize_quaternion, quaternion_to_rotation_matrix, \
     convert_points_to_homogeneous, convert_points_from_homogeneous
@@ -17,22 +18,25 @@ class LWSLoss(nn.Module):
         self.gamma = gamma
         self.q_norm_loss = q_norm_loss
 
-    def forward(self, x_pred, q_pred, x_gt, q_gt):
-        device = x_pred.device
-
+    def forward1(self, x_pred, q_pred, x_gt, q_gt):
         x_hat = x_pred
         q_hat = normalize_quaternion(q_pred)
 
         x_loss = self.loss_fn(x_hat, x_gt)
         q_loss = self.loss_fn(q_hat, q_gt)
-        if self.q_norm_loss:
-            qn_loss = self.loss_fn(q_pred.norm(dim=1), torch.ones(len(q_hat), requires_grad=False).to(device=device))
+        loss = x_loss + self.beta * q_loss
+        return loss
 
-        if self.q_norm_loss:
-            loss = x_loss + self.beta * q_loss + self.gamma * qn_loss
-        else:
-            loss = x_loss + self.beta * q_loss
+    def forward(self, pred_f2f_x, pred_f2f_r, pred_f2g_x, pred_f2g_r,
+                gt_f2f_x, gt_f2f_r, gt_f2g_x, gt_f2g_q):
 
+        L_x = F.mse_loss(pred_f2f_x, gt_f2f_x) + F.mse_loss(pred_f2g_x, gt_f2g_x)
+        L_r = F.mse_loss(pred_f2f_r, gt_f2f_r) + F.mse_loss(pred_f2g_r, gt_f2g_q)
+
+        #L_x = F.mse_loss(pred_f2g_x, gt_f2g_x)
+        #L_r = F.mse_loss(pred_f2g_r, gt_f2g_q)
+
+        loss = L_x + self.beta * L_r
         return loss
 
 
@@ -46,18 +50,25 @@ class HWSLoss(nn.Module):
         :param learn_hyper_params: learning the smoothnes terms during training
         """
         super(HWSLoss, self).__init__()
+        self.learn_hyper_params = learn_hyper_params
 
-        self.sx = torch.tensor(sx, device=device, requires_grad=learn_hyper_params)
-        self.sq = torch.tensor(sq, device=device, requires_grad=learn_hyper_params)
+        self.sx = torch.nn.Parameter(torch.tensor(sx, device=device, requires_grad=learn_hyper_params))
+        self.sq = torch.nn.Parameter(torch.tensor(sq, device=device, requires_grad=learn_hyper_params))
         self.loss_fn = nn.MSELoss()
 
-    def forward(self, x_pred, q_pred, x_gt, q_gt):
-        x_hat = x_pred
-        q_hat = normalize_quaternion(q_pred)
+    def forward(self, pred_f2f_x, pred_f2f_r, pred_f2g_x, pred_f2g_r,
+                gt_f2f_x, gt_f2f_r, gt_f2g_x, gt_f2g_q):
 
-        x_loss = self.loss_fn(x_hat, x_gt) * torch.exp(-self.sx) + self.sx
-        q_loss = self.loss_fn(q_hat, q_gt) * torch.exp(-self.sq) + self.sq
-        loss = x_loss + q_loss
+        L_x = F.mse_loss(pred_f2f_x, gt_f2f_x) + F.mse_loss(pred_f2g_x, gt_f2g_x)
+        L_r = F.mse_loss(pred_f2f_r, gt_f2f_r) + F.mse_loss(pred_f2g_r, gt_f2g_q)
+
+        #L_x = F.mse_loss(pred_f2g_x, gt_f2g_x)
+        #L_r = F.mse_loss(pred_f2g_r, gt_f2g_q)
+
+        #L_x = F.mse_loss(pred_f2f_x, gt_f2f_x)
+        #L_r = F.mse_loss(pred_f2f_r, gt_f2f_r)
+
+        loss = L_x * torch.exp(-self.sx) + self.sx + L_r * torch.exp(-self.sq) + self.sq
         return loss
 
 

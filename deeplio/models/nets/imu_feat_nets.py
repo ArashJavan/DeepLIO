@@ -60,17 +60,43 @@ class ImufeatRNN0(BaseImuFeatNet):
 
         if rnn_type == 'gru':
             self.rnn = nn.GRU(input_size=self.input_size, hidden_size=self.hidden_size,
-                              num_layers=self.num_layers, bidirectional=self.bidirectional, dropout=self.p)
+                              num_layers=self.num_layers, bidirectional=self.bidirectional,
+                              dropout=self.p, batch_first=True)
         else:
             self.rnn = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size,
-                               num_layers=self.num_layers, bidirectional=self.bidirectional, dropout=self.p)
+                               num_layers=self.num_layers, bidirectional=self.bidirectional,
+                               dropout=self.p, batch_first=True)
 
         self.num_dir = 2 if self.bidirectional else 1
         self.output_shape = self.output_shape = [1, self.seq_size, self.hidden_size]
 
     def forward(self, x):
         batch_size = len(x)
-        x_all = [xx for x_ in x for xx in x_]
+        seq_size = len(x[0])
+
+        x_all = [x_seq for x_batch in x for x_seq in x_batch]
+        x_padded = nn.utils.rnn.pad_sequence(x_all, batch_first=True)
+        b, t, n = x_padded.shape
+        x_padded = x_padded.view(batch_size, seq_size, t, self.input_size)
+        b, s, t, n = x_padded.shape
+
+        zeros = torch.zeros(self.num_layers * self.num_dir,
+                            b, self.hidden_size,
+                            dtype=x_padded.dtype, device=x_padded.device)
+
+        h, c = (zeros, zeros)
+        outputs = torch.zeros((b, s, self.hidden_size)).to(x_padded.device)
+        for seq in range(s):
+            out, (h, c) = self.rnn(x_padded[:, seq], (h, c))
+            out = out.view(b, t, self.num_dir, self.hidden_size)
+            outputs[:, seq, :] = out[:, -1, 0, :]
+        return outputs
+
+    def forward2(self, x):
+        x_padded = nn.utils.rnn.pad_sequence(x, batch_first=True)
+        batch_size = len(x)
+        seq_len = len(x[0])
+        x_all = [x_seq for x_batch in x for x_seq in x_batch]
         lengths = [x_.size(0) for x_ in x_all]
         x_padded = nn.utils.rnn.pad_sequence(x_all)
         s, b, n = x_padded.shape  # seq
@@ -81,6 +107,7 @@ class ImufeatRNN0(BaseImuFeatNet):
         out = out[-1, :, 0] # many-to-one
         out = out.view(batch_size, self.seq_size, -1)
         return out
+
 
 
 class ImuFeatRnn1(BaseImuFeatNet):

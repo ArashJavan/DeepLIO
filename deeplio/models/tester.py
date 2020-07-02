@@ -14,6 +14,8 @@ import torch
 import torch.utils.data
 from torch.utils import tensorboard
 
+from liegroups.torch import SO3
+
 from deeplio import datasets as ds
 from deeplio.common import spatial
 from deeplio.models import nets
@@ -110,18 +112,44 @@ class Tester(Worker):
                     return 0
 
                 # prepare data
-                imgs, untrans_imgs, imus, gts_local, gts_global = self.data_permuter(data)
+                self.data_permuter(data)
+                imgs = self.data_permuter.res_imgs
+                normals = self.data_permuter.res_normals
+                imus = self.data_permuter.res_imu
+                imgs_org = self.data_permuter.res_img_org
+                normals_org = self.data_permuter.res_normals_org
+                gts_f2f = self.data_permuter.res_gt_f2f
+                gts_f2g = self.data_permuter.res_gt_f2g
+                gts_global = self.data_permuter.res_gt_global
+
+                if torch.isnan(gts_f2f).any() or torch.isinf(gts_f2f).any():
+                    raise ValueError("gt-f2f:\n{}".format(gts_f2f))
+                if torch.isnan(gts_f2g).any() or torch.isinf(gts_f2g).any():
+                    raise ValueError("gt-f2g:\n{}".format(gts_f2g))
+
+                if torch.isnan(normals).any() or torch.isinf(normals).any():
+                    raise ValueError("normals:\n{}".format(normals))
+                if torch.isnan(imgs).any() or torch.isinf(imgs).any():
+                    raise ValueError("imgs:\n{}".format(imgs))
 
                 # prepare ground truth tranlational and rotational part
-                gt_local_x = gts_local[:, :, 0:3].view(-1, 3)
-                gt_local_q = gts_local[:, :, 3:7].view(-1, 4)
+                gt_f2f_x = gts_f2f[:, :, 0:3]
+                gt_f2f_q = gts_f2f[:, :, 3:]
+                gt_f2g_x = gts_f2g[:, :, 0:3]
+                gt_f2g_q = gts_f2g[:, :, 3:7]
 
                 # compute model predictions and loss
-                pred_x, pred_q = self.model([imgs, imus])
-                loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
+                pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
+                #pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+                pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+
+                loss = self.criterion(pred_f2f_x, pred_f2f_r,
+                                      pred_f2g_x, pred_f2g_r,
+                                      gt_f2f_x, gt_f2f_q,
+                                      gt_f2g_x, gt_f2g_q)
 
                 # measure accuracy and record loss
-                losses.update(loss.detach().item(), len(pred_x))
+                losses.update(loss.detach().item(), len(pred_f2f_x))
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)
@@ -154,26 +182,30 @@ class Tester(Worker):
                 T_glob[:3, 3] = gt_global[1, 0:3]  # t
                 T_glob[:3, :3] = gt_global[1, 3:12].reshape(3, 3) # R
 
-                gt_x = gt_local_x.detach().cpu().squeeze()
-                gt_q = gt_local_q.detach().cpu().squeeze()
-                pred_x = pred_x.detach().cpu().squeeze()
-                pred_q = pred_q.detach().cpu().squeeze()
+                gt_x = gt_f2f_x.detach().cpu().squeeze()
+                gt_q = gt_f2f_q.detach().cpu().squeeze()
+                pred_f2f_x = pred_f2f_x.detach().cpu().squeeze()
+                pred_f2f_r = pred_f2f_r.detach().cpu().squeeze()
+
+                #if not np.all(data['valids']):
+                #    pred_f2f_x = gt_x
+                #    pred_f2f_r = gt_q
 
                 T_local = np.identity(4)
 
                 # tranlation
-                T_local[:3, 3] = pred_x.numpy() #  gt_x.numpy()
+                T_local[:3, 3] = pred_f2f_x.numpy() #  gt_x.numpy()
                 #T_local[:3, 3] = gt_x.numpy()
 
                 if self.args.param == 'xq':
-                    T_local[:3, 3] = pred_x.numpy()
-                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q).numpy()
+                    T_local[:3, 3] = pred_f2f_x.numpy()
+                    T_local[:3, :3] = SO3.exp(pred_f2f_r).as_matrix().numpy() # spatial.quaternion_to_rotation_matrix(pred_f2f_r).numpy()
                 elif self.args.param == 'x':
-                    T_local[:3, 3] = pred_x.numpy()
-                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
+                    T_local[:3, 3] = pred_f2f_x.numpy()
+                    T_local[:3, :3] = SO3.exp(gt_q).as_matrix().numpy() # spatial.quaternion_to_rotation_matrix(gt_q).numpy()
                 elif self.args.param == 'q':
                     T_local[:3, 3] = gt_x.numpy()
-                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(pred_q).numpy()
+                    T_local[:3, :3] = SO3.exp(pred_f2f_r).as_matrix().numpy()
                 else:
                     T_local[:3, 3] = gt_x.numpy()
                     T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
@@ -191,6 +223,36 @@ class Tester(Worker):
 
         if curr_seq is not None:
             curr_seq.write_to_file()
+
+    def se3_to_SE3(self, f2f_x, f2f_r):
+        batch_size, seq_size, _ = f2f_x.shape
+
+        f2g_q = torch.zeros((batch_size, seq_size, 4), dtype=f2f_x.dtype, device=f2f_x.device)
+        f2g_x = torch.zeros((batch_size, seq_size, 3), dtype=f2f_x.dtype, device=f2f_x.device)
+
+        for b in range(batch_size):
+            R_prev = torch.zeros((3, 3), dtype=f2f_x.dtype, device=f2f_x.device)
+            R_prev[:] = torch.eye(3, dtype=f2f_x.dtype, device=f2f_x.device)
+            t_prev = torch.zeros((3), dtype=f2f_x.dtype, device=f2f_x.device)
+
+            for s in range(seq_size):
+                t_cur = f2f_x[b, s]
+                #q_cur = spatial.euler_to_rotation_matrix (f2f_r[b, s])
+                w_cur = f2f_r[b, s]
+                R_cur = SO3.exp(w_cur).as_matrix() # spatial.quaternion_to_rotation_matrix(q_cur)
+
+                if not torch.isclose(torch.det(R_cur), torch.FloatTensor([1.]).to(self.device)).all():
+                    raise ValueError("Det error:\nR\n{}\nq:\n{}".format(R_cur, w_cur))
+
+                t_prev = torch.matmul(R_prev, t_cur) + t_prev
+                R_prev = torch.matmul(R_prev, R_cur)
+
+                if not torch.isclose(torch.det(R_prev), torch.FloatTensor([1.]).to(self.device)).all():
+                    raise ValueError("Det error:\nR\n{}".format(R_prev))
+
+                f2g_q[b, s] = spatial.rotation_matrix_to_quaternion(R_prev)
+                f2g_x[b, s] = t_prev
+        return f2g_x, f2g_q
 
     def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
         pred_x = None

@@ -67,16 +67,19 @@ class KittiRawData:
         return utils.load_velo_scan(self.velo_files[idx])
 
     def get_velo_image(self, idx):
-        scan = LaserScan(project=True, H=self.image_height, W=self.image_width, fov_up=self.fov_up, fov_down=self.fov_down,
+        scan = LaserScan(project=False, H=self.image_height, W=self.image_width, fov_up=self.fov_up, fov_down=self.fov_down,
                          min_depth=self.min_depth, max_depth=self.max_depth)
         scan.open_scan(self.velo_files[idx])
+        scan.do_range_projection()
+        scan.do_normal_projection()
 
         # get projected data
         proj_xyz = scan.proj_xyz
         proj_remission = scan.proj_remission
         proj_range = scan.proj_range
+        proj_normal = scan.proj_normal
 
-        image = np.dstack((proj_xyz, proj_range, proj_remission))
+        image = np.dstack((proj_xyz, proj_remission, proj_normal, proj_range))
         return image
 
     def get_imu_values(self, idx):
@@ -198,7 +201,7 @@ class Kitti(data.Dataset):
     # In unsynced KITTI raw dataset are some timestamp holes - i.g. 2011_10_03_27
     # e.g. there is no corresponding IMU/GPS measurment to some velodyne frames,
     # We set the min. no. so we can check and ignore these holes.
-    MIN_NUM_OXT_SAMPLES = 10
+    DEFAULT_NUM_OXT_SAMPLES = 11
 
     def __init__(self, config, ds_type='train', transform=None, has_imu=True, has_lidar=True):
         """
@@ -308,22 +311,26 @@ class Kitti(data.Dataset):
             oxt_indices = np.argwhere(mask).flatten()
             len_oxt = len(oxt_indices)
 
-            if (len_oxt== 0) or (len_oxt < self.MIN_NUM_OXT_SAMPLES):
-                self.logger.debug("Not enough OXT-samples: DS: {}_{}, len:{}, velo-timestamps: {}-{}".
+            if (len_oxt== 0):
+                self.logger.debug("No OXT-samples: DS: {}_{}, len:{}, velo-timestamps: {}-{}".
                                   format(dataset.date, dataset.drive, len_oxt, velo_start_ts, velo_stop_ts))
-                imu_values = np.zeros((self.MIN_NUM_OXT_SAMPLES, 6), dtype=np.float)
+                imu_values = np.zeros((self.DEFAULT_NUM_OXT_SAMPLES, 6), dtype=np.float)
                 valids.append(False)
             else:
                 oxts = dataset.oxts_unsync[oxt_indices]
                 imu_values = np.array([[oxt[0].ax, oxt[0].ay, oxt[0].az,
                                         oxt[0].wx, oxt[0].wy, oxt[0].wz]
                                        for oxt in oxts], dtype=np.float)
+                imu_values = np.pad(imu_values, ((0, np.max(self.DEFAULT_NUM_OXT_SAMPLES - len_oxt, 0)), (0, 0)))
+                if self.DEFAULT_NUM_OXT_SAMPLES < len_oxt:
+                    imu_values = imu_values[0:self.DEFAULT_NUM_OXT_SAMPLES, :]
                 valids.append(True)
             imus.append(imu_values)
         return imus, valids
 
     def transform_images(self):
         imgs_org = torch.stack([torch.from_numpy(im.transpose(2, 0, 1)) for im in self.images])
+        imgs_org = imgs_org[:, self.channels]
 
         ct, cl = self.crop_top, self.crop_left
         mean = torch.as_tensor(self.mean_img)
@@ -336,13 +343,10 @@ class Kitti(data.Dataset):
             imgs_normalized = [torch.from_numpy(img[:, cl:-cl, :].transpose(2, 0, 1)) for img in self.images]
         else:
             imgs_normalized = [torch.from_numpy(img.transpose(2, 0, 1)) for img in self.images]
-
         imgs_normalized = torch.stack(imgs_normalized)
-        if self.inv_depth:
-            im_depth = imgs_normalized[:, 3]
-            im_depth[im_depth > 0.] = 1 / im_depth[im_depth > 0.]
         imgs_normalized.sub_(mean[None, :, None, None]).div_(std[None, :, None, None])
         imgs_normalized = imgs_normalized[:, self.channels]
+
         return imgs_org, imgs_normalized
 
     def transform_imus(self, imus):

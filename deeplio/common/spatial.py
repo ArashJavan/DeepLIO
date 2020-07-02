@@ -236,21 +236,17 @@ def rotation_matrix_to_angle_axis(
 
 def rotation_matrix_to_quaternion(
         rotation_matrix: torch.Tensor,
-        eps: float = 1e-8) -> torch.Tensor:
+        eps: float = 1e-6) -> torch.Tensor:
     r"""Convert 3x3 rotation matrix to 4d quaternion vector.
     The quaternion vector has components in (x, y, z, w) format.
-
     Args:
         rotation_matrix (torch.Tensor): the rotation matrix to convert.
         eps (float): small value to avoid zero division. Default: 1e-8.
-
     Return:
         torch.Tensor: the rotation in quaternion.
-
     Shape:
         - Input: :math:`(*, 3, 3)`
         - Output: :math:`(*, 4)`
-
     Example:
         >>> input = torch.rand(4, 3, 3)  # Nx3x3
         >>> output = kornia.rotation_matrix_to_quaternion(input)  # Nx4
@@ -267,7 +263,13 @@ def rotation_matrix_to_quaternion(
     def safe_zero_division(numerator: torch.Tensor,
                            denominator: torch.Tensor) -> torch.Tensor:
         eps: float = torch.finfo(numerator.dtype).tiny  # type: ignore
-        return numerator / torch.clamp(denominator, min=eps)
+
+        if torch.isnan(numerator).any()or torch.isinf(numerator).any():
+            print("numerator error:\n{}".format(numerator))
+
+        if torch.isnan(denominator).any() or torch.isinf(denominator).any():
+            print("denominator error:\n{}".format(denominator))
+        return numerator / torch.clamp(denominator, min=1e-6)
 
     rotation_matrix_vec: torch.Tensor = rotation_matrix.view(
         *rotation_matrix.shape[:-2], 9)
@@ -318,6 +320,39 @@ def rotation_matrix_to_quaternion(
     return quaternion
 
 
+def rotation_matrix_to_euler(rotation_matrix: torch.Tensor):
+    '''    Convert 3x3 rotation matrix to roll, pitch, yaw angles
+    Args:
+    From a paper by Gregory G. Slabaugh (undated),
+    "Computing Euler angles from a rotation matrix
+    '''
+
+    def isclose(x, y, rtol=1.e-5, atol=1.e-8):
+        return np.isclose(x, y, rtol=rtol, atol=atol)
+
+    batch_size = rotation_matrix.shape[0]
+
+    euler_angles = torch.zeros((batch_size, 3), dtype=rotation_matrix.dtype, device=rotation_matrix.device)
+    for i in range(batch_size):
+        R = rotation_matrix[i]
+        yaw = 0.0
+        if isclose(R[2,0], -1.0):
+            pitch = pi/2.0
+            roll = torch.atan2(R[0,1], R[0,2])
+        elif isclose(R[2,0], 1.0):
+            pitch = -pi/2.0
+            roll = torch.atan2(-R[0,1],-R[0,2])
+        else:
+            pitch = -torch.asin(R[2,0])
+            cos_pitch = torch.cos(pitch)
+            roll = torch.atan2(R[2,1]/cos_pitch, R[2,2]/cos_pitch)
+            yaw = torch.atan2(R[1,0]/cos_pitch, R[0,0]/cos_pitch)
+        euler_angles[i, 0] = roll
+        euler_angles[i, 1] = pitch
+        euler_angles[i, 2] = yaw
+    return euler_angles
+
+
 def normalize_quaternion(quaternion: torch.Tensor,
                          eps: float = 1e-12) -> torch.Tensor:
     r"""Normalizes a quaternion.
@@ -355,14 +390,11 @@ def normalize_quaternion(quaternion: torch.Tensor,
 def quaternion_to_rotation_matrix(quaternion: torch.Tensor) -> torch.Tensor:
     r"""Converts a quaternion to a rotation matrix.
     The quaternion should be in (x, y, z, w) format.
-
     Args:
         quaternion (torch.Tensor): a tensor containing a quaternion to be
           converted. The tensor can be of shape :math:`(*, 4)`.
-
     Return:
         torch.Tensor: the rotation matrix of shape :math:`(*, 3, 3)`.
-
     Example:
         >>> quaternion = torch.tensor([0., 0., 1., 0.])
         >>> kornia.quaternion_to_rotation_matrix(quaternion)
@@ -525,18 +557,53 @@ def euler_to_quaternion(euler: torch.Tensor) -> torch.Tensor:
     return q
 
 
+def euler_to_rotation_matrix(angle):
+    """Convert euler angles to rotation matrix.
+     Reference: https://github.com/pulkitag/pycaffe-utils/blob/master/rot_utils.py#L174
+    Args:
+        angle: rotation angle along 3 axis (roll, pitch, yaw in radians) -- size = [B, 3]
+    Returns:
+        Rotation matrix corresponding to the euler angles -- size = [B, 3, 3]
+    """
+    B = angle.size(0)
+    x, y, z = angle[:, 0], angle[:, 1], angle[:, 2]
+
+    cosz = torch.cos(z)
+    sinz = torch.sin(z)
+
+    zeros = z.detach()*0
+    ones = zeros.detach()+1
+    zmat = torch.stack([cosz, -sinz, zeros,
+                        sinz,  cosz, zeros,
+                        zeros, zeros,  ones], dim=1).reshape(B, 3, 3)
+
+    cosy = torch.cos(y)
+    siny = torch.sin(y)
+
+    ymat = torch.stack([cosy, zeros,  siny,
+                        zeros,  ones, zeros,
+                        -siny, zeros,  cosy], dim=1).reshape(B, 3, 3)
+
+    cosx = torch.cos(x)
+    sinx = torch.sin(x)
+
+    xmat = torch.stack([ones, zeros, zeros,
+                        zeros,  cosx, -sinx,
+                        zeros,  sinx,  cosx], dim=1).reshape(B, 3, 3)
+
+    rot_mat = zmat @ ymat @ xmat
+    return rot_mat
+
+
 def quaternion_log_to_exp(quaternion: torch.Tensor,
                           eps: float = 1e-8) -> torch.Tensor:
     r"""Applies exponential map to log quaternion.
     The quaternion should be in (x, y, z, w) format.
-
     Args:
         quaternion (torch.Tensor): a tensor containing a quaternion to be
           converted. The tensor can be of shape :math:`(*, 3)`.
-
     Return:
         torch.Tensor: the quaternion exponential map of shape :math:`(*, 4)`.
-
     Example:
         >>> quaternion = torch.tensor([0., 0., 0.])
         >>> kornia.quaternion_log_to_exp(quaternion)
@@ -568,14 +635,11 @@ def quaternion_exp_to_log(quaternion: torch.Tensor,
                           eps: float = 1e-8) -> torch.Tensor:
     r"""Applies the log map to a quaternion.
     The quaternion should be in (x, y, z, w) format.
-
     Args:
         quaternion (torch.Tensor): a tensor containing a quaternion to be
           converted. The tensor can be of shape :math:`(*, 4)`.
-
     Return:
         torch.Tensor: the quaternion log map of shape :math:`(*, 3)`.
-
     Example:
         >>> quaternion = torch.tensor([0., 0., 0., 1.])
         >>> kornia.quaternion_exp_to_log(quaternion)
@@ -657,6 +721,45 @@ def angle_axis_to_quaternion(angle_axis: torch.Tensor) -> torch.Tensor:
     quaternion[..., 1:2] += a1 * k
     quaternion[..., 2:3] += a2 * k
     return torch.cat([w, quaternion], dim=-1)
+
+
+def rotation_matrix_log_to_exp(omega, eps=1e-8):
+    """
+    :param omega: Axis-angle, Nx3
+    :return: Rotation matrix, Nx3x3
+    """
+    dev = omega.device
+    assert omega.shape[1] == 3
+    bs = omega.shape[0]
+    theta = torch.sqrt(torch.sum(torch.pow(omega, 2), 1, keepdim=True))
+    cos_theta = torch.cos(theta).unsqueeze(-1)
+    sin_theta = torch.sin(theta).unsqueeze(-1)
+    eye = torch.unsqueeze(torch.eye(3), 0).repeat(bs, 1, 1).to(dev)
+    norm_r = omega / (theta + eps)
+    r_1 = torch.unsqueeze(norm_r, 2)  # N, 3, 1
+    r_2 = torch.unsqueeze(norm_r, 1)  # N, 1, 3
+    zero_col = torch.zeros(bs, 1).to(dev)
+    skew_sym = torch.cat([zero_col, -norm_r[:, 2:3], norm_r[:, 1:2], norm_r[:, 2:3], zero_col,
+                          -norm_r[:, 0:1], -norm_r[:, 1:2], norm_r[:, 0:1], zero_col], 1)
+    skew_sym = skew_sym.contiguous().view(bs, 3, 3)
+    R = cos_theta*eye + (1-cos_theta)*torch.bmm(r_1, r_2) + sin_theta*skew_sym
+    return R
+
+
+def rotation_matrix_exp_to_log(R):
+    """
+    :param R: Rotation matrix, Nx3x3
+    :return: r: Rotation vector, Nx3
+    """
+    if R.dim() < 3:
+        R = R.unsqueeze(dim=0)
+
+    assert R.shape[1] == R.shape[2] == 3
+    cos_theta = torch.clamp((R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2] - 1) / 2, min=-1., max=1.)
+    theta = torch.acos(cos_theta).view(-1, 1)
+    r = torch.stack((R[:, 2, 1]-R[:, 1, 2], R[:, 0, 2]-R[:, 2, 0], R[:, 1, 0]-R[:, 0, 1]), 1) / (2*torch.sin(theta))
+    r_norm = r / torch.sqrt(torch.sum(torch.pow(r, 2), 1, keepdim=True))
+    return theta * r_norm
 
 
 # based on:

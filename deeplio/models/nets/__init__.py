@@ -8,6 +8,8 @@ from .imu_feat_nets import ImuFeatFC, ImufeatRNN0, ImuFeatRnn1
 from .lidar_feat_nets import LidarPointSegFeat, LidarSimpleFeat0, LidarSimpleFeat1
 from .odom_feat_nets import OdomFeatFC, OdomFeatRNN
 from .fusion_nets import DeepLIOFusionCat, DeepLIOFusionSoft
+
+
 net_logger = None
 
 
@@ -29,16 +31,22 @@ def create_deeplio_arch(input_shape, cfg, device):
     # create feature net
     lidar_feat_net = create_lidar_feat_net(input_shape, cfg, arch_cfg, device)
     lidar_outshape = lidar_feat_net.get_output_shape() if lidar_feat_net is not None else None
+    if lidar_feat_net is not None:
+        net_logger.print("\tInput-shape: {}, Output-shape: {}".format(input_shape, lidar_outshape))
 
     imu_feat_net = create_imu_feat_net(cfg, arch_cfg, device)
     imu_outshape = imu_feat_net.get_output_shape() if imu_feat_net is not None else None
+    if imu_feat_net is not None:
+        net_logger.print("\tInput-shape: {}, Output-shape: {}".format(6, imu_outshape))
 
     if lidar_feat_net is not None and imu_feat_net is not None:
         fusion_inshapes = [lidar_outshape, imu_outshape]
         fusion_feat_net = create_fusion_net(fusion_inshapes, cfg, arch_cfg, device)
         fusion_outshape = fusion_feat_net.get_output_shape()
+        net_logger.print("\tInput-shape: {}, Output-shape: {}".format(fusion_inshapes, fusion_outshape))
     else:
         fusion_feat_net = None
+
 
     if fusion_feat_net is not None:
         odom_inshape = fusion_outshape
@@ -51,6 +59,8 @@ def create_deeplio_arch(input_shape, cfg, device):
 
     odom_feat_net = create_odometry_feat_net(odom_inshape, cfg, arch_cfg, device)
     odom_outshape = odom_feat_net.get_output_shape() if odom_feat_net is not None else None
+    if odom_feat_net is not None:
+        net_logger.print("\tInput-shape: {}, Output-shape: {}".format(odom_inshape, odom_outshape))
 
     # assigning feature net to deepio
     net.lidar_feat_net = lidar_feat_net
@@ -97,7 +107,7 @@ def create_lidar_feat_net(input_shape, cfg, arch_cfg, device):
         # TODO: PointSeg is mad eof Encoder and decoder,
         # Load them in a more generic way.
         if feat_name == 'lidar-feat-pointseg' and 'encoder' in model_path:
-            net = feat_net.encoder
+            net = feat_net.encoder1
             load_state_dict(net, model_path)
         elif feat_name == 'lidar-feat-pointseg' and 'decoder' in model_path:
             net = feat_net.decoder
@@ -124,7 +134,7 @@ def create_imu_feat_net(cfg, arch_cfg, device):
     if feat_name == 'imu-feat-fc':
         feat_net = ImuFeatFC(cfg[feat_name])
     elif feat_name == 'imu-feat-rnn':
-        feat_net = ImuFeatRnn1(cfg[feat_name])
+        feat_net = ImufeatRNN0(cfg[feat_name])
     else:
         raise ValueError("Wrong feature network {}".format(feat_name))
 
