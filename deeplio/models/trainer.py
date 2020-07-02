@@ -335,7 +335,7 @@ class Trainer(Worker):
                 t_cur = f2f_x[b, s]
                 #q_cur = spatial.euler_to_rotation_matrix (f2f_r[b, s])
                 euler_cur = f2f_r[b, s]
-                R_cur = spatial.euler_to_rotation_matrix (euler_cur) # spatial.quaternion_to_rotation_matrix(q_cur)
+                R_cur = spatial.euler_to_rotation_matrix(euler_cur.unsqueeze(0)).squeeze() # spatial.quaternion_to_rotation_matrix(q_cur)
 
                 if not torch.isclose(torch.det(R_cur), torch.FloatTensor([1.]).to(self.device)).all():
                     raise ValueError("Det error:\nR\n{}\nq:\n{}".format(R_cur, euler_cur))

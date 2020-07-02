@@ -347,8 +347,11 @@ def rotation_matrix_to_euler(rotation_matrix: torch.Tensor):
             cos_pitch = torch.cos(pitch)
             roll = torch.atan2(R[2,1]/cos_pitch, R[2,2]/cos_pitch)
             yaw = torch.atan2(R[1,0]/cos_pitch, R[0,0]/cos_pitch)
-        euler_angles[i] = [roll, pitch, yaw]
+        euler_angles[i, 0] = roll
+        euler_angles[i, 1] = pitch
+        euler_angles[i, 2] = yaw
     return euler_angles
+
 
 def normalize_quaternion(quaternion: torch.Tensor,
                          eps: float = 1e-12) -> torch.Tensor:
@@ -563,7 +566,7 @@ def euler_to_rotation_matrix(angle):
         Rotation matrix corresponding to the euler angles -- size = [B, 3, 3]
     """
     B = angle.size(0)
-    x, y, z = angle[:,0], angle[:,1], angle[:,2]
+    x, y, z = angle[:, 0], angle[:, 1], angle[:, 2]
 
     cosz = torch.cos(z)
     sinz = torch.sin(z)
@@ -588,8 +591,8 @@ def euler_to_rotation_matrix(angle):
                         zeros,  cosx, -sinx,
                         zeros,  sinx,  cosx], dim=1).reshape(B, 3, 3)
 
-    rotMat = zmat @ ymat @ xmat
-    return rotMat
+    rot_mat = zmat @ ymat @ xmat
+    return rot_mat
 
 
 def quaternion_log_to_exp(quaternion: torch.Tensor,
