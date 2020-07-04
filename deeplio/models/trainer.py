@@ -228,9 +228,9 @@ class Trainer(Worker):
             if torch.isnan(gts_f2g).any() or torch.isinf(gts_f2g).any() :
                 raise ValueError("gt-f2g:\n{}".format(gts_f2g))
 
-            if torch.isnan(normals).any() or torch.isinf(normals).any():
+            if len(normals) > 0 and (torch.isnan(normals).any() or torch.isinf(normals).any()):
                 raise ValueError("normals:\n{}".format(normals))
-            if torch.isnan(imgs).any() or torch.isinf(imgs).any():
+            if len(imgs) > 0 and (torch.isnan(imgs).any() or torch.isinf(imgs).any()):
                 raise ValueError("imgs:\n{}".format(imgs))
 
             # prepare ground truth tranlational and rotational part
@@ -278,7 +278,7 @@ class Trainer(Worker):
             if idx % 10 == 0:
                 pass # print("param-mean: {}, grad-mean: {}".format(param_means.mean().data, param_grad_means.mean().data))
 
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
             self.optimizer.step()
 
             # measure elapsed time
@@ -314,7 +314,6 @@ class Trainer(Worker):
                 self.tensor_writer.add_scalar("Train/sx", self.criterion.sx.data, self.step_val)
                 self.tensor_writer.add_scalar("Train/sq", self.criterion.sq.data, self.step_val)
                 self.tensor_writer.flush()
-
             self.data_last = data
 
         self.post_train_iter()
@@ -348,7 +347,7 @@ class Trainer(Worker):
                 if not torch.isclose(torch.det(R_prev), torch.FloatTensor([1.]).to(self.device)).all():
                     raise ValueError("Det error:\nR\n{}".format(R_prev))
 
-                f2g_q[b, s] = spatial.rotation_matrix_to_quaternion(R_prev)
+                f2g_q[b, s] = SO3.from_matrix(R_prev, normalize=True).to_quaternion()
                 f2g_x[b, s] = t_prev
         return f2g_x, f2g_q
 
@@ -389,11 +388,6 @@ class Trainer(Worker):
                 if torch.isnan(gts_f2g).any() or torch.isinf(gts_f2g).any():
                     raise ValueError("gt-f2g:\n{}".format(gts_f2g))
 
-                if torch.isnan(normals).any() or torch.isinf(normals).any():
-                    raise ValueError("normals:\n{}".format(normals))
-                if torch.isnan(imgs).any() or torch.isinf(imgs).any():
-                    raise ValueError("imgs:\n{}".format(imgs))
-
                 # prepare ground truth tranlational and rotational part
                 gt_f2f_x = gts_f2f[:, :, 0:3]
                 gt_f2f_q = gts_f2f[:, :, 3:]
@@ -429,7 +423,6 @@ class Trainer(Worker):
                     self.tensor_writer.add_scalar\
                         ("Val/Loss", losses.avg, step_val)
                     self.tensor_writer.flush()
-
         self.post_valiate()
         return losses.avg
 

@@ -321,7 +321,7 @@ class Kitti(data.Dataset):
                 imu_values = np.array([[oxt[0].ax, oxt[0].ay, oxt[0].az,
                                         oxt[0].wx, oxt[0].wy, oxt[0].wz]
                                        for oxt in oxts], dtype=np.float)
-                imu_values = np.pad(imu_values, ((0, np.max(self.DEFAULT_NUM_OXT_SAMPLES - len_oxt, 0)), (0, 0)))
+                imu_values = np.pad(imu_values, ((0, np.maximum(self.DEFAULT_NUM_OXT_SAMPLES - len_oxt, 0).astype(np.int)), (0, 0)))
                 if self.DEFAULT_NUM_OXT_SAMPLES < len_oxt:
                     imu_values = imu_values[0:self.DEFAULT_NUM_OXT_SAMPLES, :]
                 valids.append(True)

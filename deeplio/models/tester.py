@@ -127,11 +127,6 @@ class Tester(Worker):
                 if torch.isnan(gts_f2g).any() or torch.isinf(gts_f2g).any():
                     raise ValueError("gt-f2g:\n{}".format(gts_f2g))
 
-                if torch.isnan(normals).any() or torch.isinf(normals).any():
-                    raise ValueError("normals:\n{}".format(normals))
-                if torch.isnan(imgs).any() or torch.isinf(imgs).any():
-                    raise ValueError("imgs:\n{}".format(imgs))
-
                 # prepare ground truth tranlational and rotational part
                 gt_f2f_x = gts_f2f[:, :, 0:3]
                 gt_f2f_q = gts_f2f[:, :, 3:]
@@ -141,10 +136,10 @@ class Tester(Worker):
                 # compute model predictions and loss
                 pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
                 #pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
-                pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+                #pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
 
                 loss = self.criterion(pred_f2f_x, pred_f2f_r,
-                                      pred_f2g_x, pred_f2g_r,
+                                      None, None,
                                       gt_f2f_x, gt_f2f_q,
                                       gt_f2g_x, gt_f2g_q)
 
@@ -187,9 +182,9 @@ class Tester(Worker):
                 pred_f2f_x = pred_f2f_x.detach().cpu().squeeze()
                 pred_f2f_r = pred_f2f_r.detach().cpu().squeeze()
 
-                #if not np.all(data['valids']):
-                #    pred_f2f_x = gt_x
-                #    pred_f2f_r = gt_q
+                if not np.all(data['valids']):
+                    pred_f2f_x = gt_x
+                    pred_f2f_r = gt_q
 
                 T_local = np.identity(4)
 
