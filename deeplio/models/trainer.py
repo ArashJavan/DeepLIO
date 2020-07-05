@@ -55,7 +55,7 @@ class Trainer(Worker):
                                            {'params': self.criterion.parameters()}]
                                           , self.cfg, args)
         self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=self.epochs, end_learning_rate=0.00005,
-                                              power=2.0)
+                                              power=1.0)
 
         self.has_lidar = True if self.model.lidar_feat_net is not None else False
         self.has_imu = True if self.model.imu_feat_net is not None else False
@@ -347,7 +347,7 @@ class Trainer(Worker):
                 if not torch.isclose(torch.det(R_prev), torch.FloatTensor([1.]).to(self.device)).all():
                     raise ValueError("Det error:\nR\n{}".format(R_prev))
 
-                f2g_q[b, s] = SO3.from_matrix(R_prev, normalize=True).to_quaternion()
+                f2g_q[b, s] = SO3.from_matrix(R_prev, normalize=False).to_quaternion()
                 f2g_x[b, s] = t_prev
         return f2g_x, f2g_q
 

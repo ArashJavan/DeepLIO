@@ -136,10 +136,10 @@ class Tester(Worker):
                 # compute model predictions and loss
                 pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
                 #pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
-                #pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+                pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
 
                 loss = self.criterion(pred_f2f_x, pred_f2f_r,
-                                      None, None,
+                                      pred_f2g_x, pred_f2g_r,
                                       gt_f2f_x, gt_f2f_q,
                                       gt_f2g_x, gt_f2g_q)
 

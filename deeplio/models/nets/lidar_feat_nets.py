@@ -206,11 +206,11 @@ class FeatureNetSimple0(nn.Module):
         self.input_shape = input_shape
         c, h, w = self.input_shape
 
-        self.conv1 = nn.Conv2d(c, out_channels=32, kernel_size=3, stride=(1, 2), padding=1)
+        self.conv1 = nn.Conv2d(c, out_channels=32, kernel_size=(3, 7), stride=(1, 2), padding=1)
         self.bn1 = nn.BatchNorm2d(32)
         self.pool1 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
 
-        self.conv2 = nn.Conv2d(32, out_channels=32, kernel_size=3, stride=(1, 1), padding=1)
+        self.conv2 = nn.Conv2d(32, out_channels=32, kernel_size=(3, 5), stride=(1, 1), padding=1)
         self.bn2 = nn.BatchNorm2d(32)
         self.pool2 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
 
@@ -258,11 +258,11 @@ class FeatureNetSimple1(nn.Module):
         self.input_shape = input_shape
         c, h, w = self.input_shape
 
-        self.conv1 = nn.Conv2d(c, out_channels=32, kernel_size=3, stride=(1, 2), padding=1)
+        self.conv1 = nn.Conv2d(c, out_channels=32, kernel_size=(5, 7), stride=(1, 2), padding=1)
         self.bn1 = nn.BatchNorm2d(32)
         self.pool1 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
 
-        self.conv2 = nn.Conv2d(32, out_channels=32, kernel_size=3, stride=(1, 1), padding=1)
+        self.conv2 = nn.Conv2d(32, out_channels=32, kernel_size=(3, 5), stride=(1, 1), padding=1)
         self.bn2 = nn.BatchNorm2d(32)
         self.pool2 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
 
@@ -280,8 +280,8 @@ class FeatureNetSimple1(nn.Module):
         self.bn6 = nn.BatchNorm2d(128)
         self.pool6 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True)
 
-        self.conv7 = nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn7 = nn.BatchNorm2d(128)
+        self.conv7 = nn.Conv2d(128, out_channels=256, kernel_size=3, stride=(1, 1), padding=1)
+        self.bn7 = nn.BatchNorm2d(256)
         # self.pool7 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True)
         self.pool7 = nn.AdaptiveAvgPool2d((1, 1))
 
