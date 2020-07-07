@@ -1,6 +1,6 @@
 datasets:
-  sequence-size: 3 # must be >= 1
-  combinations: [[0, 1], [1, 2], [2, 3]]
+  sequence-size: 4 # must be >= 1
+  combinations: [[0, 1], [1, 2], [2, 3], [3, 4]]
   kitti:
     root-path-sync: "datasets/KITTI/sync"
     root-path-unsync: "datasets/KITTI/extract"
@@ -14,15 +14,13 @@ datasets:
     inverse-depth: true
     train:
       #2011-10-03: [27, 42, 34]
-      #2011-09-30: [16, 18, 20, 27, 28]
-      2011-09-30: [18]
+      2011-09-30: [16, 18, 20, 27, 28]
     test:
       #2011-10-03: [27, 42, 34]
       #2011-09-30: [16, 33, 34]
-      2011-09-30: [18, 33]
+      2011-09-30: [16, 18, 20, 27, 28, 33, 34]
     validation:
-      #2011-09-26: [23, 39]
-      2011-09-30: [33]
+      2011-09-26: [23, 39]
 
     # channesl: x, y, z, remission, nx, ny ,nz, range)
     mean-image: [-0.0124, 0.3444, -0.9382, 0.236, -0.0022, 0.0046, 0.4149, 0.1178]
@@ -83,10 +81,10 @@ imu-feat-fc:  # FC
 imu-feat-rnn: # RNN
   type: "lstm"
   input-size: 6  # !fixed! do not chanage
-  hidden-size: 256
+  hidden-size: 128
   num-layers: 2
-  bidirectional: false
-  dropout: 0.2
+  bidirectional: true
+  dropout: 0.
 
 ### Fusion-Layer for DeepLIO Net ###########################
 fusion-layer-cat:
@@ -107,7 +105,7 @@ odom-feat-rnn:
   hidden-size: 128
   num-layers: 2
   bidirectional: true
-  dropout: 0.2
+  dropout: 0.
 
 ### Loss Configurations ###########################
 losses:

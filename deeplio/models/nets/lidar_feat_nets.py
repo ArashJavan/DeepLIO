@@ -249,7 +249,7 @@ class FeatureNetSimple1(nn.Module):
         self.input_shape = input_shape
         c, h, w = self.input_shape
 
-        self.conv1 = nn.Conv2d(c, out_channels=32, kernel_size=(5, 7), stride=(1, 2), padding=1)
+        self.conv1 = nn.Conv2d(c, out_channels=32, kernel_size=(3, 7), stride=(1, 2), padding=1)
         self.bn1 = nn.BatchNorm2d(32)
         self.pool1 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
 
