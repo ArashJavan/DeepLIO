@@ -25,7 +25,7 @@ class DeepLIOFusionCat():
         lidar_feat = x[0]
         imu_feat = x[1]
         if self.type == 'cat':
-            out = torch.cat((lidar_feat, imu_feat), dim=2)
+            out = torch.cat((lidar_feat, imu_feat), dim=-1)
         else:
             raise NotImplementedError()
         return out
@@ -53,23 +53,23 @@ class DeepLIOFusionSoft(BaseNet):
 
         layers = []
         for in_shape in self.input_shapes:
-            b, s, n = in_shape
+            b, n = in_shape
             layers.append(nn.Linear(sum_in_channels, n))
         self.layers = nn.ModuleList(layers)
 
-        self.output_shape = [1, self.seq_size, sum_in_channels]
+        self.output_shape = [1, sum_in_channels]
 
     def forward(self, x):
         lidar_feat = x[0]
         imu_feat = x[1]
 
-        cat_feat = torch.cat((lidar_feat, imu_feat), dim=2)
+        cat_feat = torch.cat((lidar_feat, imu_feat), dim=1)
         s1_feat = torch.sigmoid(self.layers[0](cat_feat))
         s2_feat = torch.sigmoid(self.layers[1](cat_feat))
 
         lidar_feat *= s1_feat
         imu_feat *= s2_feat
-        out = torch.cat((lidar_feat, imu_feat), dim=2)
+        out = torch.cat((lidar_feat, imu_feat), dim=-1)
         return out
 
     def get_output_shape(self):

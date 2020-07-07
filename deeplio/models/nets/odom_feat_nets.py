@@ -42,7 +42,7 @@ class OdomFeatFC(BaseNet):
 
     def get_output_shape(self):
         # all layer should have [BxTx..] as input and output
-        return [1, 1, self.hidden_size[-1]]
+        return [1, self.hidden_size[-1]]
 
 
 class OdomFeatRNN(BaseNet):
@@ -68,18 +68,23 @@ class OdomFeatRNN(BaseNet):
                                batch_first=True, dropout=self.p)
 
         self.num_dir = 2 if self.bidirectional else 1
+        self.init_hidden_state()
+
+    def init_hidden_state(self):
+        self.h_states = None
 
     def forward(self, x):
         """
-
         :param x: input, dim= [BxTxN]
         :return:
         """
         # reorder to seq. first. Since it seems to have better comput. performance, then batch first
+        if len(x.shape) < 3:
+            x.unsqueeze_(1)
         b, s, n = x.shape
-        out, _ = self.rnn(x)
+        out, self.h_states = self.rnn(x, self.h_states)
         out = out.view(b, s, self.num_dir, self.hidden_size)
-        out = out[:, :, 0]
+        out = out[:, :, 0].squeeze(1)
         return out
 
     def get_output_shape(self):

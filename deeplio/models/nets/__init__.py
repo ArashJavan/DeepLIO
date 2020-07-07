@@ -47,7 +47,6 @@ def create_deeplio_arch(input_shape, cfg, device):
     else:
         fusion_feat_net = None
 
-
     if fusion_feat_net is not None:
         odom_inshape = fusion_outshape
     elif lidar_feat_net is not None:
@@ -57,7 +56,7 @@ def create_deeplio_arch(input_shape, cfg, device):
     else:
         raise ValueError("No input-shape for odometry network is defined, please check you configuration!")
 
-    odom_feat_net = create_odometry_feat_net(odom_inshape, cfg, arch_cfg, device)
+    odom_feat_net = create_odometry_feat_net((odom_inshape[0], odom_inshape[1]+7), cfg, arch_cfg, device)
     odom_outshape = odom_feat_net.get_output_shape() if odom_feat_net is not None else None
     if odom_feat_net is not None:
         net_logger.print("\tInput-shape: {}, Output-shape: {}".format(odom_inshape, odom_outshape))
@@ -184,7 +183,7 @@ def create_odometry_feat_net(input_shape, cfg, arch_cfg, device):
     if feat_name == 'odom-feat-fc':
         feat_net = OdomFeatFC(input_shape[2], cfg[feat_name])
     elif feat_name == 'odom-feat-rnn':
-        feat_net = OdomFeatRNN(input_shape[2], cfg[feat_name])
+        feat_net = OdomFeatRNN(input_shape[-1], cfg[feat_name])
     else:
         raise ValueError("Wrong odometry feature network {}".format(feat_name))
 

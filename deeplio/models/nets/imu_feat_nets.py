@@ -68,29 +68,26 @@ class ImufeatRNN0(BaseImuFeatNet):
                                dropout=self.p, batch_first=True)
 
         self.num_dir = 2 if self.bidirectional else 1
-        self.output_shape = self.output_shape = [1, self.seq_size, self.hidden_size]
+        self.output_shape = self.output_shape = [1, self.hidden_size]
+        self.init_hidden_state()
+
+    def init_hidden_state(self):
+        self.h_states = None
 
     def forward(self, x):
-        batch_size = len(x)
-        seq_size = len(x[0])
-
-        x_all = [x_seq for x_batch in x for x_seq in x_batch]
-        x_padded = nn.utils.rnn.pad_sequence(x_all, batch_first=True)
+        x_padded = nn.utils.rnn.pad_sequence(x, batch_first=True)
         b, t, n = x_padded.shape
-        x_padded = x_padded.view(batch_size, seq_size, t, self.input_size)
-        b, s, t, n = x_padded.shape
 
-        zeros = torch.zeros(self.num_layers * self.num_dir,
-                            b, self.hidden_size,
-                            dtype=x_padded.dtype, device=x_padded.device)
+        if self.h_states is None:
+            zeros = torch.zeros(self.num_layers * self.num_dir,
+                                b, self.hidden_size,
+                                dtype=x_padded.dtype, device=x_padded.device)
+            self.h_states = (zeros, zeros)
 
-        h, c = (zeros, zeros)
-        outputs = torch.zeros((b, s, self.hidden_size)).to(x_padded.device)
-        for seq in range(s):
-            out, (h, c) = self.rnn(x_padded[:, seq], (h, c))
-            out = out.view(b, t, self.num_dir, self.hidden_size)
-            outputs[:, seq, :] = out[:, -1, 0, :]
-        return outputs
+        out, self.h_states = self.rnn(x_padded, self.h_states)
+        out = out.view(b, t, self.num_dir, self.hidden_size)
+        out = out[:, -1, 0, :].contiguous()
+        return out
 
     def forward2(self, x):
         x_padded = nn.utils.rnn.pad_sequence(x, batch_first=True)

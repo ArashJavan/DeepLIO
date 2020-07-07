@@ -3,6 +3,8 @@ from torch import nn
 
 from deeplio.common.logger import get_app_logger
 from .base_net import BaseNet
+from .imu_feat_nets import ImufeatRNN0
+from .odom_feat_nets import OdomFeatRNN
 from ..misc import get_config_container
 
 class BaseDeepLIO(BaseNet):
@@ -60,6 +62,8 @@ class DeepLIO(BaseDeepLIO):
     def forward(self, x):
         lidar_imgs = x[0]  # lidar image frames
         imu_meas = x[1]  # imu measurments
+        pose_prev = x[2]
+
         x_last_feat = None
 
         x_feat_lidar = None
@@ -79,6 +83,7 @@ class DeepLIO(BaseDeepLIO):
 
         x_odom = None
         if self.odom_feat_net is not None:
+            x_last_feat = torch.cat((x_last_feat, pose_prev), dim=-1)
             x_odom = self.odom_feat_net(x_last_feat)
             x_last_feat = x_odom
 
@@ -90,6 +95,13 @@ class DeepLIO(BaseDeepLIO):
         x_pos = self.fc_pos(x_last_feat)
         x_ori = self.fc_ori(x_last_feat)
         return x_pos, x_ori
+
+    def init_hidden_state(self):
+        if self.imu_feat_net is not None and isinstance(self.imu_feat_net, ImufeatRNN0):
+            self.imu_feat_net.init_hidden_state()
+
+        if self.odom_feat_net is not None and isinstance(self.odom_feat_net, OdomFeatRNN):
+            self.odom_feat_net.init_hidden_state()
 
     def get_feat_networks(self):
         feat_nets = [self.odom_feat_net, self.fusion_net, self.imu_feat_net, self.lidar_feat_net]

@@ -127,22 +127,57 @@ class Tester(Worker):
                 if torch.isnan(gts_f2g).any() or torch.isinf(gts_f2g).any():
                     raise ValueError("gt-f2g:\n{}".format(gts_f2g))
 
+                imgs.transpose_(0, 1)
+                normals.transpose_(0, 1)
+                imus = torch.stack([torch.stack(imu) for imu in imus]).transpose(0, 1)
+                gts_f2f.transpose_(0, 1)
+                gts_f2g.transpose_(0, 1)
+
                 # prepare ground truth tranlational and rotational part
                 gt_f2f_x = gts_f2f[:, :, 0:3]
-                gt_f2f_q = gts_f2f[:, :, 3:]
+                gt_f2f_r = gts_f2f[:, :, 3:]
                 gt_f2g_x = gts_f2g[:, :, 0:3]
                 gt_f2g_q = gts_f2g[:, :, 3:7]
 
-                # compute model predictions and loss
-                pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
-                #pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
-                pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+                batch_size = len(gts_global)
 
-                loss = self.criterion(pred_f2f_x, pred_f2f_r,
-                                      pred_f2g_x, pred_f2g_r,
-                                      gt_f2f_x, gt_f2f_q,
+                pred_f2g_t_prev = torch.zeros((batch_size, 3)).to(self.device)
+                pred_f2g_q_prev = torch.zeros((batch_size, 4)).to(self.device)
+                pred_f2g_q_prev[:, 0] = 1.
+
+                preds_f2f_x = []
+                preds_f2f_r = []
+                preds_f2g_x = []
+                preds_f2g_q = []
+
+                for s in range(self.seq_size):
+                    # compute model predictions and loss
+                    pred_f2f_x, pred_f2f_r = self.model([[imgs[s], normals[s]], imus[s],
+                                                         torch.cat((pred_f2g_t_prev.detach(),
+                                                                    pred_f2g_q_prev.detach()), dim=-1)])
+
+                    if torch.isnan(pred_f2f_x).any() or torch.isinf(pred_f2f_x).any():
+                        raise ValueError("pred_f2f_x:\n{}".format(pred_f2f_x))
+                    if torch.isnan(pred_f2f_r).any() or torch.isinf(pred_f2f_r).any():
+                        raise ValueError("pred_f2f_r:\n{}".format(pred_f2f_r))
+
+                    pred_f2g_t_prev, pred_f2g_q_prev = \
+                        self.se3_to_SE3(pred_f2f_x, pred_f2f_r, pred_f2g_t_prev, pred_f2g_q_prev)
+
+                    preds_f2f_x.append(pred_f2f_x)
+                    preds_f2f_r.append(pred_f2f_r)
+                    preds_f2g_x.append(pred_f2g_t_prev)
+                    preds_f2g_q.append(pred_f2g_q_prev)
+
+                preds_f2f_x = torch.stack(preds_f2f_x)
+                preds_f2f_r = torch.stack(preds_f2f_r)
+                preds_f2g_x = torch.stack(preds_f2g_x)
+                preds_f2g_q = torch.stack(preds_f2g_q)
+
+                loss = self.criterion(preds_f2f_x, preds_f2f_r,
+                                      preds_f2g_x, preds_f2g_q,
+                                      gt_f2f_x, gt_f2f_r,
                                       gt_f2g_x, gt_f2g_q)
-
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), len(pred_f2f_x))
 
@@ -178,7 +213,7 @@ class Tester(Worker):
                 T_glob[:3, :3] = gt_global[1, 3:12].reshape(3, 3) # R
 
                 gt_x = gt_f2f_x.detach().cpu().squeeze()
-                gt_q = gt_f2f_q.detach().cpu().squeeze()
+                gt_q = gt_f2f_r.detach().cpu().squeeze()
                 pred_f2f_x = pred_f2f_x.detach().cpu().squeeze()
                 pred_f2f_r = pred_f2f_r.detach().cpu().squeeze()
 
@@ -219,41 +254,26 @@ class Tester(Worker):
         if curr_seq is not None:
             curr_seq.write_to_file()
 
-    def se3_to_SE3(self, f2f_x, f2f_r):
-        batch_size, seq_size, _ = f2f_x.shape
-
-        f2g_q = torch.zeros((batch_size, seq_size, 4), dtype=f2f_x.dtype, device=f2f_x.device)
-        f2g_x = torch.zeros((batch_size, seq_size, 3), dtype=f2f_x.dtype, device=f2f_x.device)
-
+    def se3_to_SE3(self, f2f_x, f2f_r, f2g_t_prev, f2g_q_prev):
+        batch_size, _ = f2f_x.shape
+        q_res = []
+        t_res = []
         for b in range(batch_size):
-            R_prev = torch.zeros((3, 3), dtype=f2f_x.dtype, device=f2f_x.device)
-            R_prev[:] = torch.eye(3, dtype=f2f_x.dtype, device=f2f_x.device)
-            t_prev = torch.zeros((3), dtype=f2f_x.dtype, device=f2f_x.device)
+            R_prev = SO3.from_quaternion(f2g_q_prev[b]).as_matrix()
+            t_prev = f2g_t_prev[b]
 
-            for s in range(seq_size):
-                t_cur = f2f_x[b, s]
-                #q_cur = spatial.euler_to_rotation_matrix (f2f_r[b, s])
-                w_cur = f2f_r[b, s]
-                R_cur = SO3.exp(w_cur).as_matrix() # spatial.quaternion_to_rotation_matrix(q_cur)
+            R_curr = SO3.exp(f2f_r[b]).as_matrix()
+            t_curr = f2f_x[b]
 
-                if not torch.isclose(torch.det(R_cur), torch.FloatTensor([1.]).to(self.device)).all():
-                    raise ValueError("Det error:\nR\n{}\nq:\n{}".format(R_cur, w_cur))
+            R = torch.matmul(R_prev, R_curr)
+            q = SO3.from_matrix(R, normalize=True).to_quaternion()
+            t = torch.matmul(R_prev, t_curr) + t_prev
 
-                t_prev = torch.matmul(R_prev, t_cur) + t_prev
-                R_prev = torch.matmul(R_prev, R_cur)
-
-                if not torch.isclose(torch.det(R_prev), torch.FloatTensor([1.]).to(self.device)).all():
-                    raise ValueError("Det error:\nR\n{}".format(R_prev))
-
-                f2g_q[b, s] = spatial.rotation_matrix_to_quaternion(R_prev)
-                f2g_x[b, s] = t_prev
-        return f2g_x, f2g_q
-
-    def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
-        pred_x = None
-        pred_q = None
-        loss = None
-        return pred_x, pred_q, loss
+            q_res.append(q)
+            t_res.append(t)
+        q_res = torch.stack(q_res)
+        t_res = torch.stack(t_res)
+        return t_res, q_res
 
 
 class TesterDeepLIO(Tester):

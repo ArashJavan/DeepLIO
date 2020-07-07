@@ -20,19 +20,10 @@ class BaseLidarFeatNet(BaseNet):
         self.input_shape = input_shape
         self.output_shape = None
 
-    def combine_data(self, x):
-        b, s, c, h, w = x.shape
-        comb_idx_0 = self.combinations[:, 0]
-        comb_idx_1 = self.combinations[:, 1]
-
-        ims0 = x[:, comb_idx_0].view(b*self.seq_size, c, h, w).contiguous()
-        ims1 = x[:, comb_idx_1].view(b*self.seq_size, c, h, w).contiguous()
-        return ims0, ims1
-
     def calc_output_shape(self):
         c, h, w = self.input_shape
-        input1 = torch.rand((1, self.seq_size, self.timestamps, c, h, w))
-        input2 = torch.rand((1, self.seq_size, self.timestamps, c, h, w))
+        input1 = torch.rand((1, self.timestamps, c, h, w))
+        input2 = torch.rand((1, self.timestamps, c, h, w))
         self.eval()
         with torch.no_grad():
             out = self.forward([input1, input2])
@@ -83,9 +74,9 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         mask0: predicted mask to each time sequence
         """
         imgs_xyz, imgs_normals = x[0], x[1]
-        b, s, t, c, h, w = imgs_xyz.shape
-        imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
-        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
+        b, t, c, h, w = imgs_xyz.shape
+        imgs_xyz = imgs_xyz.reshape(b, t * c, h, w)
+        imgs_normals = imgs_xyz.reshape(b, t * c, h, w)
 
         x_1a_0, x_1b_0, x_se1_0, x_se2_0, x_se3_0, x_el_0 = self.encoder1(imgs_xyz)
         x_feat_0 = x_se3_0
@@ -107,7 +98,7 @@ class LidarPointSegFeat(BaseLidarFeatNet):
             x = self.drop(x)
 
         # reshape output to BxTxCxHxW
-        x = x.view(b, s, num_flat_features(x, 1))
+        x = x.view(b, num_flat_features(x, 1))
         return x
 
 
@@ -132,9 +123,9 @@ class LidarSimpleFeat0(BaseLidarFeatNet):
         """
         imgs_xyz, imgs_normals = x[0], x[1]
 
-        b, s, t, c, h, w = imgs_xyz.shape
-        imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
-        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
+        b, t, c, h, w = imgs_xyz.shape
+        imgs_xyz = imgs_xyz.reshape(b, t * c, h, w)
+        imgs_normals = imgs_xyz.reshape(b, t * c, h, w)
 
         x_feat_0 = self.encoder1(imgs_xyz)
         x_feat_1 = self.encoder2(imgs_normals)
@@ -150,7 +141,7 @@ class LidarSimpleFeat0(BaseLidarFeatNet):
             x = self.drop(x)
 
         # reshape output to BxTxCxHxW
-        x = x.view(b, s, num_flat_features(x, 1))
+        x = x.view(b, num_flat_features(x, 1))
         return x
 
 
@@ -176,9 +167,9 @@ class LidarSimpleFeat1(BaseLidarFeatNet):
         """
         imgs_xyz, imgs_normals = x[0], x[1]
 
-        b, s, t, c, h, w = imgs_xyz.shape
-        imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
-        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
+        b, t, c, h, w = imgs_xyz.shape
+        imgs_xyz = imgs_xyz.reshape(b, t * c, h, w)
+        imgs_normals = imgs_xyz.reshape(b, t * c, h, w)
 
         x_feat_0 = self.encoder1(imgs_xyz)
         x_feat_1 = self.encoder2(imgs_normals)
@@ -194,7 +185,7 @@ class LidarSimpleFeat1(BaseLidarFeatNet):
             y = self.drop(y)
 
         # reshape output to BxTxCxHxW
-        y = y.view(b, s, num_flat_features(y, 1))
+        y = y.view(b, num_flat_features(y, 1))
         return y
 
 
