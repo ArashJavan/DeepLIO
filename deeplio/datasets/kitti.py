@@ -384,7 +384,7 @@ class Kitti(data.Dataset):
     def create_imu_data(self, dataset, indices, velo_timespamps):
         # load and transform imus
         imus, valids = self.load_imus(dataset, velo_timespamps)
-        imus = self.transform_imus(imus)
+        imus = torch.stack(self.transform_imus(imus))
         data = {'imus': imus, 'valids': valids}
         return data
 

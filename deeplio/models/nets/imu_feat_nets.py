@@ -71,23 +71,16 @@ class ImufeatRNN0(BaseImuFeatNet):
         self.output_shape = self.output_shape = [1, self.seq_size, self.hidden_size]
 
     def forward(self, x):
-        batch_size = len(x)
-        seq_size = len(x[0])
-
-        x_all = [x_seq for x_batch in x for x_seq in x_batch]
-        x_padded = nn.utils.rnn.pad_sequence(x_all, batch_first=True)
-        b, t, n = x_padded.shape
-        x_padded = x_padded.view(batch_size, seq_size, t, self.input_size)
-        b, s, t, n = x_padded.shape
+        b, s, t, n = x.shape
 
         zeros = torch.zeros(self.num_layers * self.num_dir,
                             b, self.hidden_size,
-                            dtype=x_padded.dtype, device=x_padded.device)
+                            dtype=x.dtype, device=x.device)
 
         h, c = (zeros, zeros)
-        outputs = torch.zeros((b, s, self.hidden_size)).to(x_padded.device)
+        outputs = torch.zeros((b, s, self.hidden_size)).to(x.device)
         for seq in range(s):
-            out, (h, c) = self.rnn(x_padded[:, seq], (h, c))
+            out, (h, c) = self.rnn(x[:, seq], (h, c))
             out = out.view(b, t, self.num_dir, self.hidden_size)
             outputs[:, seq, :] = out[:, -1, 0, :]
         return outputs
