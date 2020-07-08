@@ -197,17 +197,8 @@ class Trainer(Worker):
             if self.data_last is None:
                 self.data_last = data
 
-            # if self.has_imu:
-            #     idx_invalid = np.where(np.sum(np.array(data["valids"]), axis=1) != self.seq_size_data)[0]
-            #     if len(idx_invalid) > 0:
-            #         try:
-            #             data['imus'] = [data['imus'][x] for x in range(len(data['gts'])) if x not in idx_invalid]
-            #             data['valids'] = [data['valids'][x] for x in range(len(data['gts'])) if x not in idx_invalid]
-            #             data['metas'] = [data['metas'][x] for x in range(len(data['gts'])) if x not in idx_invalid]
-            #             data['gts'] = data['gts'][[x for x in range(len(data['gts'])) if x not in idx_invalid]]
-            #         except IndexError as ex:
-            #             self.logger.warning("{} (idx-inv={}, len={})".format(str(ex), idx_invalid, len(data['gts'])))
-            #             continue
+            #if not np.alltrue(data['valids']):
+            #    continue
 
             # measure data loading time
             data_time.update(time.time() - end)
@@ -275,10 +266,7 @@ class Trainer(Worker):
             if torch.isnan(param_grad_means).any():
                 raise ValueError("param_grad_means:\n{}".format(param_grad_means))
 
-            if idx % 10 == 0:
-                pass # print("param-mean: {}, grad-mean: {}".format(param_means.mean().data, param_grad_means.mean().data))
-
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
+            #torch.nn.utils.clip_grad_norm_(self.model.parameters(), 20.)
             self.optimizer.step()
 
             # measure elapsed time
@@ -347,7 +335,7 @@ class Trainer(Worker):
                 if not torch.isclose(torch.det(R_prev), torch.FloatTensor([1.]).to(self.device)).all():
                     raise ValueError("Det error:\nR\n{}".format(R_prev))
 
-                f2g_q[b, s] = SO3.from_matrix(R_prev, normalize=False).to_quaternion()
+                f2g_q[b, s] = SO3.from_matrix(R_prev, normalize=True).to_quaternion()
                 f2g_x[b, s] = t_prev
         return f2g_x, f2g_q
 

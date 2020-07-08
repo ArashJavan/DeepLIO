@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from .base_net import BaseNet, num_flat_features
+from .base_net import BaseNet, num_flat_features, conv
 from .pointseg_modules import Fire, SELayer
 from .pointseg_net import PSEncoder, PSDecoder
 from ..misc import get_config_container
@@ -115,13 +115,19 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         return x
 
 
-class LidarSimpleFeat0(BaseLidarFeatNet):
+class LidarFlowNetFeat(BaseLidarFeatNet):
     def __init__(self, input_shape, cfg):
-        super(LidarSimpleFeat0, self).__init__(input_shape, cfg)
+        super(LidarFlowNetFeat, self).__init__(input_shape, cfg)
         c, h, w = self.input_shape
+        batch_norm = True
 
-        self.encoder1 = FeatureNetSimple0([2*c, h, w])
-        self.encoder2 = FeatureNetSimple0([2*c, h, w])
+        self.encoder1 = FlowNetEncoder([2*c, h, w])
+        self.encoder2 = FlowNetEncoder([2*c, h, w])
+
+        self.conv1 = conv(batch_norm, 512, 512, stride=2)
+        self.conv2 = conv(batch_norm, 512, 512, stride=2)
+        self.conv3 = conv(batch_norm, 512, 1024)
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
 
         if self.p > 0:
             self.drop = nn.Dropout(self.p)
@@ -149,6 +155,11 @@ class LidarSimpleFeat0(BaseLidarFeatNet):
             x = x_feat_0 + x_feat_1
         else:
             x = x_feat_0 - x_feat_1
+
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.pool(x)
 
         if self.p > 0.:
             x = self.drop(x)
@@ -202,54 +213,29 @@ class LidarSimpleFeat1(BaseLidarFeatNet):
         return y
 
 
-class FeatureNetSimple0(nn.Module):
+class FlowNetEncoder(nn.Module):
     """Simple Conv. based Feature Network
     """
-    def __init__(self, input_shape):
-        super(FeatureNetSimple0, self).__init__()
+    def __init__(self, input_shape, batch_norm=True):
+        super(FlowNetEncoder, self).__init__()
         self.input_shape = input_shape
         c, h, w = self.input_shape
 
-        self.conv1 = nn.Conv2d(c, out_channels=32, kernel_size=(3, 7), stride=(1, 2), padding=1)
-        self.bn1 = nn.BatchNorm2d(32)
-        self.pool1 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
-
-        self.conv2 = nn.Conv2d(32, out_channels=32, kernel_size=(3, 5), stride=(1, 1), padding=1)
-        self.bn2 = nn.BatchNorm2d(32)
-        self.pool2 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
-
-        self.conv3 = nn.Conv2d(32, out_channels=64, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn3 = nn.BatchNorm2d(64)
-        self.pool3 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
-
-        self.conv4 = nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn4 = nn.BatchNorm2d(64)
-        self.pool4 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True)
-
-        self.conv5 = nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn5 = nn.BatchNorm2d(64)
-        self.pool5 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True)
+        self.conv1 = conv(batch_norm, c, 64, kernel_size=(5, 7), stride=(1, 2))
+        self.conv2 = conv(batch_norm, 64, 128, kernel_size=(3, 5), stride=(1, 2))
+        self.conv3 = conv(batch_norm, 128, 256, kernel_size=(3, 5), stride=(1, 2))
+        self.conv3_1 = conv(batch_norm, 256, 256)
+        self.conv4 = conv(batch_norm, 256, 512, stride=2)
+        self.conv4_1 = conv(batch_norm, 512, 512)
+        self.conv5 = conv(batch_norm, 512, 512, stride=2)
+        self.conv5_1 = conv(batch_norm, 512, 512)
 
     def forward(self, x):
-        out = F.relu(self.conv1(x))
-        out = self.bn1(out)
-        out = self.pool1(out)
-
-        out = F.relu(self.conv2(out))
-        out = self.bn2(out)
-        out = self.pool2(out)
-
-        out = F.relu(self.conv3(out))
-        out = self.bn3(out)
-        out = self.pool3(out)
-
-        out = F.relu(self.conv4(out))
-        out = self.bn4(out)
-        out = self.pool4(out)
-
-        out = F.relu(self.conv5(out))
-        out = self.bn5(out)
-        out = self.pool5(out)
+        out_conv2 = self.conv2(self.conv1(x))
+        out_conv3 = self.conv3_1(self.conv3(out_conv2))
+        out_conv4 = self.conv4_1(self.conv4(out_conv3))
+        out_conv5 = self.conv5_1(self.conv5(out_conv4))
+        out = out_conv5
         return out
 
 

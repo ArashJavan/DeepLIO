@@ -37,6 +37,10 @@ class DataCombiCreater(object):
             imgs, normals = self.process_images(data['images'].to(self.device))
             imgs_org, normals_org = self.process_images(data['untrans-images'].to(self.device))
 
+        # only in deeplio and deepio we have imus
+        if has_imu:
+            imus = data['imus'].to(self.device)
+
         n_batches = len(data['gts'])
         for b in range(n_batches):
             gts = data['gts'][b]
@@ -44,11 +48,6 @@ class DataCombiCreater(object):
             gt_f2f.append(gts_local)
             gt_f2g.append(gts_glob)
 
-            # only in deeplio and deepio we have imus
-            if has_imu:
-                res = self.process_imus(data['imus'][b])
-                imus.append(res)
-                #res_imu = [torch.stack(imu).to(self.device, non_blocking=True) for imu_seq in res_imu for imu in imu_seq]
 
         gt_global = data['gts'].to(self.device)
         gt_f2f = torch.stack(gt_f2f).to(self.device, non_blocking=True)
