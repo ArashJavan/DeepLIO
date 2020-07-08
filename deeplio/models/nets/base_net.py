@@ -49,3 +49,23 @@ def eval_output_size_detection(model, input_shape):
         x = model(x)
         _, c, h, w = x.shape
     return c, h, w
+
+
+
+def conv( batch_norm, in_planes, out_planes, kernel_size=(3, 3), stride=1):
+    padding_h = (kernel_size[0] - 1) // 2
+    padding_w = (kernel_size[1] - 1) // 2
+
+    if batch_norm:
+        return nn.Sequential(
+            nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=(padding_h, padding_w),
+                      bias=False),
+            nn.BatchNorm2d(out_planes),
+            nn.LeakyReLU(0.1, inplace=True)
+        )
+    else:
+        return nn.Sequential(
+            nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=(padding_h, padding_w),
+                      bias=True),
+            nn.LeakyReLU(0.1, inplace=True)
+        )

@@ -335,7 +335,7 @@ class Trainer(Worker):
                 if not torch.isclose(torch.det(R_prev), torch.FloatTensor([1.]).to(self.device)).all():
                     raise ValueError("Det error:\nR\n{}".format(R_prev))
 
-                f2g_q[b, s] = SO3.from_matrix(R_prev, normalize=False).to_quaternion()
+                f2g_q[b, s] = SO3.from_matrix(R_prev, normalize=True).to_quaternion()
                 f2g_x[b, s] = t_prev
         return f2g_x, f2g_q
 
