@@ -73,6 +73,8 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         if self.p > 0.:
             self.drop = nn.Dropout(self.p)
 
+        self.fc1 = nn.Linear(768, 128)
+
         self.output_shape = self.calc_output_shape()
 
     def forward(self, x):
@@ -101,10 +103,12 @@ class LidarPointSegFeat(BaseLidarFeatNet):
             x = x_feat_0 - x_feat_1
 
         x = self.fire12(x)
-        x = self.fire34(x)
+        x = self.fire34(x).squeeze()
 
         if self.p > 0.:
             x = self.drop(x)
+
+        x = F.leaky_relu(self.fc1(x))
 
         # reshape output to BxTxCxHxW
         x = x.view(b, s, num_flat_features(x, 1))
