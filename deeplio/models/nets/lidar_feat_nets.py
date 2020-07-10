@@ -103,7 +103,7 @@ class LidarPointSegFeat(BaseLidarFeatNet):
             x = x_feat_0 - x_feat_1
 
         x = self.fire12(x)
-        x = self.fire34(x).squeeze()
+        x = self.fire34(x)[:, :, 0, 0]
 
         if self.p > 0.:
             x = self.drop(x)
