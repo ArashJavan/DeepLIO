@@ -61,15 +61,15 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         b, c, h, w = enc_out_shapes
 
         alpha = 2 if self.fusion == 'cat' else 1
-        self.fire12 = nn.Sequential(Fire(alpha*c, 64, 256, 256, bn=True, bn_d=self.bn_d),
-                                    Fire(512, 64, 256, 256, bn=True, bn_d=self.bn_d),
-                                    SELayer(512, reduction=2),
-                                    nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)))
+        #self.fire12 = nn.Sequential(Fire(alpha*c, 64, 256, 256, bn=True, bn_d=self.bn_d),
+        #                            Fire(512, 64, 256, 256, bn=True, bn_d=self.bn_d),
+        #                            SELayer(512, reduction=2),
+        #                            nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)))
 
-        self.fire34 = nn.Sequential(Fire(512, 80, 384, 384, bn=True, bn_d=self.bn_d),
-                                    Fire(768, 80, 384, 384, bn=True, bn_d=self.bn_d),
-                                    #nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)),
-                                    nn.AdaptiveAvgPool2d((1, 1)))
+        #self.fire34 = nn.Sequential(Fire(512, 80, 384, 384, bn=True, bn_d=self.bn_d),
+        #                            Fire(768, 80, 384, 384, bn=True, bn_d=self.bn_d),
+        #                            #nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)),
+        #                            nn.AdaptiveAvgPool2d((1, 1)))
 
         if self.p > 0.:
             self.drop = nn.Dropout(self.p)

@@ -85,9 +85,10 @@ class BaseBlk(nn.Module):
 
 class Fire(BaseBlk):
     def __init__(self, inplanes, squeeze_planes,
-                 expand1x1_planes, expand3x3_planes, bn=True, bn_d=0.1, init='kaiming'):
+                 expand1x1_planes, expand3x3_planes, bn=True, bn_d=0.1, init='kaiming', bypass=True):
         super(Fire, self).__init__(init)
         self.inplanes = inplanes
+        self.bypass = bypass
         self.bn = bn
 
         self.activation = nn.ReLU(inplace=True)
@@ -103,9 +104,16 @@ class Fire(BaseBlk):
         self.expand3x3 = nn.Conv2d(squeeze_planes, expand3x3_planes, kernel_size=3, padding=1)
         if self.bn:
             self.expand3x3_bn = nn.BatchNorm2d(expand3x3_planes, momentum=bn_d)
+
+        self.upsample = None
+        outplanes = expand1x1_planes + expand3x3_planes
+        if self.bypass and (inplanes != outplanes):
+            self.upsample = nn.Conv2d(inplanes, outplanes, kernel_size=1)
+
         self.reset_parameters()
 
     def forward(self, x):
+        identity = x
         x = self.squeeze(x)
         if self.bn:
             x = self.squeeze_bn(x)
@@ -122,6 +130,12 @@ class Fire(BaseBlk):
         x_3x3 = self.activation(x_3x3)
 
         out = torch.cat([x_1x1, x_3x3], 1)
+
+        if self.bypass:
+            if self.upsample:
+                identity = self.upsample(identity)
+            out += identity
+            out = F.relu(out, inplace=True)
         return out
 
 
