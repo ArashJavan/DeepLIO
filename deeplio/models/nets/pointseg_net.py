@@ -95,6 +95,118 @@ class PSEncoder(BaseNet):
         return self.output_shapes
 
 
+class PSEncoder2(BaseNet):
+    def __init__(self, input_shape, cfg, bn_d = 0.1):
+        super(PSEncoder2, self).__init__()
+        bn_d = bn_d
+        self.bypass = cfg['bypass']
+        self.input_shape = input_shape
+        c, h, w = self.input_shape
+
+        ### Ecnoder part
+        self.conv1a = nn.Sequential(nn.Conv2d(c, 32, kernel_size=(5, 7), stride=(1, 2), padding=(2, 3)),
+                                    nn.BatchNorm2d(32, momentum=bn_d),
+                                    nn.ReLU(inplace=True))
+
+        self.pool1 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=1)
+        self.fire2 = Fire(32, 8, 32, 32, bn=True, bn_d=bn_d)
+        self.fire3 = Fire(64, 16, 32, 32, bn=True, bn_d=bn_d)
+        self.se1 = SELayer(64, reduction=2)
+
+        # First block
+        self.pool2 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=1)
+        self.fire4 = Fire(64, 16, 64, 64, bn=True, bn_d=bn_d)
+        self.fire5 = Fire(128, 16, 64, 64, bn=True, bn_d=bn_d)
+        self.se2 = SELayer(128, reduction=2)
+
+        # second block
+        self.pool3 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1)
+        self.fire6 = Fire(128, 32, 128, 128, bn=True, bn_d=bn_d)
+        self.fire7 = Fire(256, 32, 128, 128, bn=True, bn_d=bn_d)
+        self.se3 = SELayer(256, reduction=2)
+
+        # third block
+        self.pool4 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1)
+        self.fire8 = Fire(256, 48, 192, 192, bn=True, bn_d=bn_d)
+        self.fire9 = Fire(384, 48, 192, 192, bn=True, bn_d=bn_d)
+        self.fire10 = Fire(384, 64, 256, 256, bn=True, bn_d=bn_d)
+        self.fire11 = Fire(512, 64, 256, 256, bn=True, bn_d=bn_d)
+        self.se4 = SELayer(512, reduction=2)
+
+        # fourth block
+        self.pool5 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1)
+        self.fire12 = Fire(512, 96, 384, 384, bn=True, bn_d=bn_d)
+        self.fire13 = Fire(768, 96, 384, 384, bn=True, bn_d=bn_d)
+        self.se5 = SELayer(768, reduction=2)
+
+        self.pool6 = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.output_shapes = self.calc_output_shape()
+
+    def forward(self, x):
+        x_1a = self.conv1a(x)  # (H, W/2)
+
+        ### Encoder forward
+        # first fire block
+        x_p1 = self.pool1(x_1a)
+        x_f2 = self.fire2(x_p1)
+        x_f3 = self.fire3(x_f2)
+        x_se1 = self.se1(x_f3)
+        if self.bypass:
+            x_se1 += x_f2
+
+        x_p2 = self.pool2(x_se1)
+        x_f4 = self.fire4(x_p2)
+        x_f5 = self.fire5(x_f4)
+        x_se2 = self.se2(x_f5)
+        if self.bypass:
+            x_se2 += x_f4
+
+        # second fire block
+        x_p3 = self.pool3(x_se2)
+        x_f6 = self.fire6(x_p3)
+        x_f7 = self.fire7(x_f6)
+        x_se3 = self.se3(x_f7)
+        if self.bypass:
+            x_se3 += x_f6
+
+        # third fire block
+        x_p4 = self.pool4(x_se3)
+        x_f8 = self.fire8(x_p4)
+        x_f9 = self.fire9(x_f8)
+        if self.bypass:
+            x_f9 += x_f8
+        x_f10 = self.fire10(x_f9)
+        x_f11 = self.fire11(x_f10)
+        x_se4 = self.se4(x_f11)
+        if self.bypass:
+            x_se4 += x_f10
+
+        # fourth fire block
+        x_p5 = self.pool5(x_se4)
+        x_f12 = self.fire12(x_p5)
+        x_f13 = self.fire13(x_f12)
+        x_se5 = self.se5(x_f13)
+        if self.bypass:
+            x_se5 += x_f12
+
+        x_p6 = self.pool6(x_se5)
+
+        out = x_p6
+        return out
+
+    def calc_output_shape(self):
+        c, h, w = self.input_shape
+        input = torch.rand((1, c, h, w))
+        self.eval()
+        with torch.no_grad():
+           x_se3 = self.forward(input)
+        return x_se3.shape
+
+    def get_output_shape(self):
+        return self.output_shapes
+
+
 class PSDecoder(BaseNet):
     def __init__(self, input_shape, cfg):
         super(PSDecoder, self).__init__()

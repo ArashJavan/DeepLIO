@@ -4,7 +4,7 @@ from torch.nn import functional as F
 
 from .base_net import BaseNet, num_flat_features, conv
 from .pointseg_modules import Fire, SELayer
-from .pointseg_net import PSEncoder
+from .pointseg_net import PSEncoder2
 from .resnet import ResNetEncoder
 from ..misc import get_config_container
 
@@ -51,14 +51,14 @@ class LidarPointSegFeat(BaseLidarFeatNet):
 
         c, h, w = self.input_shape
 
-        self.encoder1 = PSEncoder((2*c, h, w), cfg)
-        self.encoder2 = PSEncoder((2*c, h, w), cfg)
+        self.encoder1 = PSEncoder2((2*c, h, w), cfg)
+        self.encoder2 = PSEncoder2((2*c, h, w), cfg)
 
         # shapes of  x_1a, x_1b, x_se1, x_se2, x_se3, x_el
         enc_out_shapes = self.encoder1.get_output_shape()
 
         # number of output channels in encoder
-        b, c, h, w = enc_out_shapes[4]
+        b, c, h, w = enc_out_shapes
 
         alpha = 2 if self.fusion == 'cat' else 1
         self.fire12 = nn.Sequential(Fire(alpha*c, 64, 256, 256, bn=True, bn_d=self.bn_d),
@@ -90,11 +90,8 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
         imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
 
-        x_1a_0, x_1b_0, x_se1_0, x_se2_0, x_se3_0, x_el_0 = self.encoder1(imgs_xyz)
-        x_feat_0 = x_se3_0
-
-        x_1a_1, x_1b_1, x_se1_1, x_se2_1, x_se3_1, x_el_1 = self.encoder2(imgs_normals)
-        x_feat_1 = x_se3_1
+        x_feat_0 = self.encoder1(imgs_xyz)
+        x_feat_1 = self.encoder2(imgs_normals)
 
         if self.fusion == 'cat':
             x = torch.cat((x_feat_0, x_feat_1), dim=1)
@@ -102,9 +99,9 @@ class LidarPointSegFeat(BaseLidarFeatNet):
             x = x_feat_0 + x_feat_1
         else:
             x = x_feat_0 - x_feat_1
-
-        x = self.fire12(x)
-        x = self.fire34(x)[:, :, 0, 0]
+        x = x[:, :, 0, 0]
+        #x = self.fire12(x)
+        #x = self.fire34(x)[:, :, 0, 0]
 
         if self.p > 0.:
             x = self.drop(x)

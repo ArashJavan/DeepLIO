@@ -38,7 +38,7 @@ deeplio:
   pretrained: false
   model-path: ""
   lidar-feat-net:
-    name: "lidar-feat-simple-1"
+    name: "lidar-feat-pointseg"
     pretrained: false
     model-path: ""
   imu-feat-net:
@@ -68,7 +68,7 @@ lidar-feat-flownet:
   fusion: add # [cat, sub, add]
 
 lidar-feat-resnet:
-  dropout: 0.1
+  dropout: 0.
   fusion: add # [cat, sub, add]
 
 # feature network simple0 with bypassed conv layers
@@ -108,7 +108,7 @@ odom-feat-fc:
 # odometry feature network with rnn-layers
 odom-feat-rnn:
   type: "lstm"
-  hidden-size: 512
+  hidden-size: 256
   num-layers: 2
   bidirectional: true
   dropout: 0.

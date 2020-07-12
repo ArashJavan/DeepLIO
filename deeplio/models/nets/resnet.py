@@ -12,7 +12,7 @@ class Identity(nn.Module):
 
 
 class ResNetEncoder(nn.Module):
-    def __init__(self, input_shape,  block=BasicBlock, layers=[1, 2, 3, 3], zero_init_residual=False,
+    def __init__(self, input_shape,  block=BasicBlock, layers=[1, 2, 3, 2], zero_init_residual=False,
                  groups=1, width_per_group=64, replace_stride_with_dilation=None,
                  norm_layer=None):
         super(ResNetEncoder, self).__init__()
