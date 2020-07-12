@@ -132,9 +132,8 @@ class PSEncoder2(BaseNet):
         self.pool4 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1) # 1/32
 
         # third block
-        self.fire11 = Fire(512, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.fire12 = Fire(512, 96, 384, 384, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.fire13 = Fire(768, 96, 384, 384, bn=True, bn_d=bn_d, bypass=False)
+        self.fire11 = Fire(512, 64, 384, 384, bn=True, bn_d=bn_d, bypass=self.bypass)
+        self.fire12 = Fire(768, 96, 384, 384, bn=True, bn_d=bn_d, bypass=False)
 
         self.pool5 = nn.AdaptiveAvgPool2d((1, 1))
 
@@ -168,9 +167,8 @@ class PSEncoder2(BaseNet):
         # third fire block
         x_f11 = self.fire11(x_p4)
         x_f12 = self.fire12(x_f11)
-        x_f13 = self.fire13(x_f12)
 
-        x_p = self.pool5(x_f13)
+        x_p = self.pool5(x_f12)
 
         out = x_p
         return out
