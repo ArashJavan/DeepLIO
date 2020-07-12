@@ -4,7 +4,8 @@ from torch.nn import functional as F
 
 from .base_net import BaseNet, num_flat_features, conv
 from .pointseg_modules import Fire, SELayer
-from .pointseg_net import PSEncoder, PSDecoder
+from .pointseg_net import PSEncoder
+from .resnet import ResNetEncoder
 from ..misc import get_config_container
 
 
@@ -169,6 +170,47 @@ class LidarFlowNetFeat(BaseLidarFeatNet):
         return x
 
 
+class LidarResNetFeat(BaseLidarFeatNet):
+    def __init__(self, input_shape, cfg):
+        super(LidarResNetFeat, self).__init__(input_shape, cfg)
+        c, h, w = self.input_shape
+        self.encoder1 = ResNetEncoder([2*c, h, w])
+        self.encoder2 = ResNetEncoder([2*c, h, w])
+
+        if self.p > 0:
+            self.drop = nn.Dropout(self.p)
+
+        self.fc1 = nn.Linear(512, 128)
+
+        self.output_shape = self.calc_output_shape()
+
+    def forward(self, x):
+        imgs_xyz, imgs_normals = x[0], x[1]
+
+        b, s, t, c, h, w = imgs_xyz.shape
+        imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
+        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
+
+        x_feat_0 = self.encoder1(imgs_xyz)
+        x_feat_1 = self.encoder2(imgs_normals)
+
+        if self.fusion == 'cat':
+            x = torch.cat((x_feat_0, x_feat_1), dim=1)
+        elif self.fusion == 'add':
+            x = x_feat_0 + x_feat_1
+        else:
+            x = x_feat_0 - x_feat_1
+
+        if self.p > 0.:
+            x = self.drop(x)
+
+        x = F.leaky_relu(self.fc1(x))
+
+        # reshape output to BxTxCxHxW
+        x = x.view(b, s, num_flat_features(x, 1))
+        return x
+
+
 class LidarSimpleFeat1(BaseLidarFeatNet):
     def __init__(self, input_shape, cfg):
         super(LidarSimpleFeat1, self).__init__(input_shape, cfg)
@@ -180,6 +222,8 @@ class LidarSimpleFeat1(BaseLidarFeatNet):
 
         if self.p > 0:
             self.drop = nn.Dropout(self.p)
+
+        self.fc1 = nn.Linear(512, 128)
 
         self.output_shape = self.calc_output_shape()
 
@@ -207,6 +251,8 @@ class LidarSimpleFeat1(BaseLidarFeatNet):
 
         if self.p > 0.:
             y = self.drop(y)
+
+        y = F.leaky_relu(self.fc1(y[:, :, 0, 0]))
 
         # reshape output to BxTxCxHxW
         y = y.view(b, s, num_flat_features(y, 1))
@@ -248,30 +294,30 @@ class FeatureNetSimple1(nn.Module):
         self.input_shape = input_shape
         c, h, w = self.input_shape
 
-        self.conv1 = nn.Conv2d(c, out_channels=32, kernel_size=(5, 7), stride=(1, 2), padding=1)
-        self.bn1 = nn.BatchNorm2d(32)
+        self.conv1 = nn.Conv2d(c, out_channels=64, kernel_size=(5, 7), stride=(1, 2), padding=(2, 3))
+        self.bn1 = nn.BatchNorm2d(64)
         self.pool1 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
 
-        self.conv2 = nn.Conv2d(32, out_channels=32, kernel_size=(3, 5), stride=(1, 1), padding=1)
-        self.bn2 = nn.BatchNorm2d(32)
+        self.conv2 = nn.Conv2d(64, out_channels=128, kernel_size=(3, 5), stride=(1, 1), padding=(1, 2))
+        self.bn2 = nn.BatchNorm2d(128)
         self.pool2 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
 
-        self.conv3 = nn.Conv2d(32, out_channels=64, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn3 = nn.BatchNorm2d(64)
+        self.conv3 = nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
 
-        self.conv4 = nn.Conv2d(64, out_channels=64, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn4 = nn.BatchNorm2d(64)
-        self.pool4 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=(1, 1), ceil_mode=True)
+        self.conv4 = nn.Conv2d(128, out_channels=256, kernel_size=3, stride=(1, 1), padding=1)
+        self.bn4 = nn.BatchNorm2d(256)
+        self.pool4 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True)
 
-        self.conv5 = nn.Conv2d(64, out_channels=128, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn5 = nn.BatchNorm2d(128)
+        self.conv5 = nn.Conv2d(256, out_channels=256, kernel_size=3, stride=(1, 1), padding=1)
+        self.bn5 = nn.BatchNorm2d(256)
 
-        self.conv6 = nn.Conv2d(128, out_channels=128, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn6 = nn.BatchNorm2d(128)
+        self.conv6 = nn.Conv2d(256, out_channels=512, kernel_size=3, stride=(1, 1), padding=1)
+        self.bn6 = nn.BatchNorm2d(512)
         self.pool6 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True)
 
-        self.conv7 = nn.Conv2d(128, out_channels=256, kernel_size=3, stride=(1, 1), padding=1)
-        self.bn7 = nn.BatchNorm2d(256)
+        self.conv7 = nn.Conv2d(512, out_channels=512, kernel_size=3, stride=(1, 1), padding=1)
+        self.bn7 = nn.BatchNorm2d(512)
         # self.pool7 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1), ceil_mode=True)
         self.pool7 = nn.AdaptiveAvgPool2d((1, 1))
 

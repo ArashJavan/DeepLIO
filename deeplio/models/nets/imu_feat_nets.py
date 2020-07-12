@@ -77,10 +77,10 @@ class ImufeatRNN0(BaseImuFeatNet):
                             b, self.hidden_size,
                             dtype=x.dtype, device=x.device)
 
-        h, c = (zeros, zeros)
+        h_state = None
         outputs = torch.zeros((b, s, self.hidden_size)).to(x.device)
         for seq in range(s):
-            out, (h, c) = self.rnn(x[:, seq], (h, c))
+            out, h_state = self.rnn(x[:, seq], h_state)
             out = out.view(b, t, self.num_dir, self.hidden_size)
             outputs[:, seq, :] = out[:, -1, 0, :]
         return outputs

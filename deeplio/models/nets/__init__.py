@@ -5,7 +5,7 @@ import torch
 from deeplio.common.logger import get_app_logger
 from .deeplio_nets import DeepLIO
 from .imu_feat_nets import ImuFeatFC, ImufeatRNN0, ImuFeatRnn1
-from .lidar_feat_nets import LidarPointSegFeat, LidarFlowNetFeat, LidarSimpleFeat1
+from .lidar_feat_nets import LidarPointSegFeat, LidarFlowNetFeat, LidarSimpleFeat1, LidarResNetFeat
 from .odom_feat_nets import OdomFeatFC, OdomFeatRNN
 from .fusion_nets import DeepLIOFusionCat, DeepLIOFusionSoft
 
@@ -95,6 +95,8 @@ def create_lidar_feat_net(input_shape, cfg, arch_cfg, device):
         feat_net = LidarPointSegFeat(input_shape, cfg[feat_name])
     elif feat_name == 'lidar-feat-flownet':
         feat_net = LidarFlowNetFeat(input_shape, cfg[feat_name])
+    elif feat_name == 'lidar-feat-resnet':
+        feat_net = LidarResNetFeat(input_shape, cfg[feat_name])
     elif feat_name == 'lidar-feat-simple-1':
         feat_net = LidarSimpleFeat1(input_shape, cfg[feat_name])
     else:

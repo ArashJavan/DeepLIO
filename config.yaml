@@ -15,14 +15,14 @@ datasets:
     train:
       #2011-10-03: [27, 42, 34]
       #2011-09-30: [16, 18, 20, 27, 28]
-      2011-09-30: [18]
+      2011-10-03: [27]
+      2011-09-30: [16, 18, 20]
     test:
-      #2011-10-03: [27, 42, 34]
-      #2011-09-30: [16, 33, 34]
-      2011-09-30: [18, 33]
+      2011-10-03: [27, 42, 34]
+      2011-09-30: [16, 18, 20, 27, 28, 33, 34]
     validation:
       #2011-09-26: [23, 39]
-      2011-09-30: [33]
+      2011-09-30: [33, 34]
 
     # channesl: x, y, z, remission, nx, ny ,nz, range)
     mean-image: [-0.0124, 0.3444, -0.9382, 0.236, -0.0022, 0.0046, 0.4149, 0.1178]
@@ -42,7 +42,7 @@ deeplio:
     pretrained: false
     model-path: ""
   imu-feat-net:
-    name: "imu-feat-rnn"
+    name: #"imu-feat-rnn"
     pretrained: false
     model-path: ""
   odom-feat-net:
@@ -54,39 +54,43 @@ deeplio:
 
 ### Lidar Feature Netowrks ###########################
 # feature network simple0 with conv layers
-lidar-feat-simple-0:
-  dropout: 0.
-  fusion: add # [cat, sub, add]
-
-# feature network simple0 with bypassed conv layers
-lidar-feat-simple-1:
-  dropout: 0.2
-  fusion: add # [cat, sub, add]
-  bypass: true
 
 # feature network pointseg
 lidar-feat-pointseg:  # pointseg feature
-  dropout: 0.
+  dropout: 0.25
   classes: ['unknown', 'object']
   bypass: true
   fusion: add # [cat, sub, add]
   part: "encoder" # [encoder, encoder+decoder]
 
+lidar-feat-flownet:
+  dropout: 0.25
+  fusion: add # [cat, sub, add]
+
+lidar-feat-resnet:
+  dropout: 0.1
+  fusion: add # [cat, sub, add]
+
+# feature network simple0 with bypassed conv layers
+lidar-feat-simple-1:
+  dropout: 0.
+  fusion: add # [cat, sub, add]
+  bypass: false
 
 ### IMU Feature Netowrks ###########################
 # IMU Feature Netowrks
 imu-feat-fc:  # FC
   input-size: 6  # !fixed! do not chanage
   hidden-size: [1024, 512, 256]
-  dropout: 0.
+  dropout: 0.25
 
 imu-feat-rnn: # RNN
   type: "lstm"
   input-size: 6  # !fixed! do not chanage
-  hidden-size: 256
+  hidden-size: 128
   num-layers: 2
-  bidirectional: false
-  dropout: 0.2
+  bidirectional: true
+  dropout: 0.25
 
 ### Fusion-Layer for DeepLIO Net ###########################
 fusion-layer-cat:
@@ -104,10 +108,10 @@ odom-feat-fc:
 # odometry feature network with rnn-layers
 odom-feat-rnn:
   type: "lstm"
-  hidden-size: 128
+  hidden-size: 512
   num-layers: 2
   bidirectional: true
-  dropout: 0.2
+  dropout: 0.
 
 ### Loss Configurations ###########################
 losses:
@@ -115,7 +119,7 @@ losses:
   hwsloss:
     params:
       learn: true
-      sx: -2.
+      sx: -3.
       sq: -3.
   lwsloss:
     params:
