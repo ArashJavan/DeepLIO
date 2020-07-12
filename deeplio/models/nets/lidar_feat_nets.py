@@ -122,13 +122,10 @@ class LidarFlowNetFeat(BaseLidarFeatNet):
         self.encoder1 = FlowNetEncoder([2*c, h, w])
         self.encoder2 = FlowNetEncoder([2*c, h, w])
 
-        self.conv1 = conv(batch_norm, 512, 512, stride=2)
-        self.conv2 = conv(batch_norm, 512, 512, stride=2)
-        self.conv3 = conv(batch_norm, 512, 1024)
-        self.pool = nn.AdaptiveAvgPool2d((1, 1))
-
         if self.p > 0:
             self.drop = nn.Dropout(self.p)
+
+        self.fc1 = nn.Linear(1024, 128)
 
         self.output_shape = self.calc_output_shape()
 
@@ -154,13 +151,10 @@ class LidarFlowNetFeat(BaseLidarFeatNet):
         else:
             x = x_feat_0 - x_feat_1
 
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.pool(x)
-
         if self.p > 0.:
             x = self.drop(x)
+
+        x = F.leaky_relu(self.fc1(x))
 
         # reshape output to BxTxCxHxW
         x = x.view(b, s, num_flat_features(x, 1))
@@ -272,13 +266,17 @@ class FlowNetEncoder(nn.Module):
         self.conv4_1 = conv(batch_norm, 512, 512)
         self.conv5 = conv(batch_norm, 512, 512, stride=2)
         self.conv5_1 = conv(batch_norm, 512, 512)
+        self.conv6 = conv(batch_norm, 512, 1024, stride=2)
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
 
     def forward(self, x):
         out_conv2 = self.conv2(self.conv1(x))
         out_conv3 = self.conv3_1(self.conv3(out_conv2))
         out_conv4 = self.conv4_1(self.conv4(out_conv3))
         out_conv5 = self.conv5_1(self.conv5(out_conv4))
-        out = out_conv5
+        out_conv6 = self.conv6(out_conv5)
+        out = self.pool(out_conv6)
+        out = torch.flatten(out, 1)
         return out
 
 
