@@ -4,7 +4,7 @@ from torch.nn import functional as F
 
 from .base_net import BaseNet, num_flat_features, conv
 from .pointseg_modules import Fire, SELayer
-from .pointseg_net import PSEncoder2
+from .pointseg_net import PSEncoder
 from .resnet import ResNetEncoder
 from ..misc import get_config_container
 
@@ -51,8 +51,8 @@ class LidarPointSegFeat(BaseLidarFeatNet):
 
         c, h, w = self.input_shape
 
-        self.encoder1 = PSEncoder2((2*c, h, w), cfg)
-        self.encoder2 = PSEncoder2((2*c, h, w), cfg)
+        self.encoder1 = PSEncoder((2 * c, h, w), cfg)
+        self.encoder2 = PSEncoder((2 * c, h, w), cfg)
 
         # shapes of  x_1a, x_1b, x_se1, x_se2, x_se3, x_el
         enc_out_shapes = self.encoder1.get_output_shape()
