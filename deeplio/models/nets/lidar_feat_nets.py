@@ -148,7 +148,7 @@ class LidarFlowNetFeat(BaseLidarFeatNet):
         if self.p > 0.:
             x = self.drop(x)
 
-        x = F.leaky_relu(self.fc1(x))
+        #x = F.leaky_relu(self.fc1(x))
 
         # reshape output to BxTxCxHxW
         x = x.view(b, s, num_flat_features(x, 1))

@@ -24,33 +24,37 @@ class PSEncoder(BaseNet):
         self.fire_blk1 = nn.Sequential(
             Fire(64, 16, 64, 64, bn=True, bn_d=bn_d, bypass=self.bypass),
             Fire(128, 16, 64, 64, bn=True, bn_d=bn_d, bypass=self.bypass),
-            Fire(128, 32, 128, 128, bn=True, bn_d=bn_d, bypass=self.bypass),
-            Fire(256, 32, 128, 128, bn=True, bn_d=bn_d, bypass=self.bypass),
-            SELayer(256, reduction=2),
+            SELayer(128, reduction=2),
             nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=1))  # 1/8
 
         # second block
         self.fire_blk2 =nn.Sequential(
+            Fire(128, 32, 128, 128, bn=True, bn_d=bn_d, bypass=self.bypass),
             Fire(256, 32, 128, 128, bn=True, bn_d=bn_d, bypass=self.bypass),
+            SELayer(256, reduction=2),
+            nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=1))  # 1/16
+
+        self.fire_blk3 =nn.Sequential(
             Fire(256, 48, 192, 192, bn=True, bn_d=bn_d, bypass=self.bypass),
             Fire(384, 48, 192, 192, bn=True, bn_d=bn_d, bypass=self.bypass),
             Fire(384, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass),
+            Fire(512, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass),
             SELayer(512, reduction=2),
             nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1))  # 1/16
 
         # third block
-        self.fire_blk3 = nn.Sequential(
+        self.fire_blk4 = nn.Sequential(
             Fire(512, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass),
             Fire(512, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass),
             SELayer(512, reduction=2),
             nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1)) # 1/32
 
         # third block
-        self.fire_blk4 = nn.Sequential(
-            Fire(512, 64, 384, 384, bn=True, bn_d=bn_d, bypass=self.bypass),
-            Fire(768, 96, 384, 384, bn=True, bn_d=bn_d, bypass=False),
-            SELayer(768, reduction=2),
-            nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1)) # 1/32
+        self.fire_blk5 = nn.Sequential(
+            Fire(512, 80, 384, 384, bn=True, bn_d=bn_d, bypass=self.bypass),
+            Fire(768, 80, 384, 384, bn=True, bn_d=bn_d, bypass=False))
+            #SELayer(768, reduction=2),
+            #nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1)) # 1/32
 
         self.output_shapes = self.calc_output_shape()
 
@@ -63,6 +67,7 @@ class PSEncoder(BaseNet):
         x = self.fire_blk2(x)
         x = self.fire_blk3(x)
         x = self.fire_blk4(x)
+        x = self.fire_blk5(x)
         return x
 
     def calc_output_shape(self):
