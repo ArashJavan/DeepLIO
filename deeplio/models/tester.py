@@ -48,7 +48,15 @@ class Tester(Worker):
         # preapre dataset and dataloaders
         transform = None
 
-        self.test_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='test')
+        self.model = nets.get_model(input_shape=(self.n_channels, self.im_height_model, self.im_width_model),
+                                    cfg=self.cfg, device=self.device)
+        self.criterion = get_loss_function(self.cfg, args.device)
+
+        self.has_lidar = True if self.model.lidar_feat_net is not None else False
+        self.has_imu = True if self.model.imu_feat_net is not None else False
+
+        self.test_dataset = ds.Kitti(config=self.cfg, transform=transform, ds_type='test',
+                                     has_imu=self.has_imu, has_lidar=self.has_lidar)
 
         self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
                                                            num_workers=self.num_workers,
@@ -58,12 +66,6 @@ class Tester(Worker):
 
         self.data_permuter = DataCombiCreater(combinations=self.combinations,
                                               device=self.device)
-        self.model = nets.get_model(input_shape=(self.n_channels, self.im_height_model, self.im_width_model),
-                                    cfg=self.cfg, device=self.device)
-        self.criterion = get_loss_function(self.cfg, args.device)
-
-        self.has_lidar = True if self.model.lidar_feat_net is not None else False
-        self.has_imu = True if self.model.imu_feat_net is not None else False
 
         self.tensor_writer = tensorboard.SummaryWriter(log_dir=self.runs_dir)
 
@@ -116,8 +118,6 @@ class Tester(Worker):
                 imgs = self.data_permuter.res_imgs
                 normals = self.data_permuter.res_normals
                 imus = self.data_permuter.res_imu
-                imgs_org = self.data_permuter.res_img_org
-                normals_org = self.data_permuter.res_normals_org
                 gts_f2f = self.data_permuter.res_gt_f2f
                 gts_f2g = self.data_permuter.res_gt_f2g
                 gts_global = self.data_permuter.res_gt_global
@@ -182,7 +182,7 @@ class Tester(Worker):
                 pred_f2f_x = pred_f2f_x.detach().cpu().squeeze()
                 pred_f2f_r = pred_f2f_r.detach().cpu().squeeze()
 
-                if not np.all(data['valids']):
+                if self.has_imu and not np.all(data['valids']):
                     pred_f2f_x = gt_x
                     pred_f2f_r = gt_q
 

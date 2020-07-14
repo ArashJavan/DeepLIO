@@ -208,8 +208,6 @@ class Trainer(Worker):
             imgs = self.data_permuter.res_imgs
             normals = self.data_permuter.res_normals
             imus = self.data_permuter.res_imu
-            imgs_org = self.data_permuter.res_img_org
-            normals_org = self.data_permuter.res_normals_org
             gts_f2f = self.data_permuter.res_gt_f2f
             gts_f2g = self.data_permuter.res_gt_f2g
             gts_global = self.data_permuter.res_gt_global
@@ -365,8 +363,6 @@ class Trainer(Worker):
                 imgs = self.data_permuter.res_imgs
                 normals = self.data_permuter.res_normals
                 imus = self.data_permuter.res_imu
-                imgs_org = self.data_permuter.res_img_org
-                normals_org = self.data_permuter.res_normals_org
                 gts_f2f = self.data_permuter.res_gt_f2f
                 gts_f2g = self.data_permuter.res_gt_f2g
                 gts_global = self.data_permuter.res_gt_global
