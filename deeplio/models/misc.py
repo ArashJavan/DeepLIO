@@ -23,7 +23,9 @@ class DataCombiCreater(object):
 
     def process(self, data):
         imgs = []
+        imgs_org = []
         normals = []
+        normals_org = []
         imus = []
         gt_f2f = []
         gt_f2g = []
@@ -33,6 +35,7 @@ class DataCombiCreater(object):
 
         if has_imgs:
             imgs, normals = self.process_images(data['images'].to(self.device))
+            imgs_org, normals_org = self.process_images(data['untrans-images'].to(self.device))
 
         # only in deeplio and deepio we have imus
         if has_imu:
@@ -51,7 +54,9 @@ class DataCombiCreater(object):
         gt_f2g = torch.stack(gt_f2g).to(self.device, non_blocking=True)
 
         self.res_imgs = imgs
+        self.res_img_org = imgs_org
         self.res_normals = normals
+        self.res_normals_org = normals_org
         self.res_imu = imus
         self.res_gt_f2f = gt_f2f
         self.res_gt_f2g = gt_f2g

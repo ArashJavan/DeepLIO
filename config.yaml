@@ -9,14 +9,12 @@ datasets:
     crop-factors: [0, 0] # [0, 4] # top, left
     fov-up: 3.
     fov-down: -25.
-    max-depth: 50.
+    max-depth: 80.
     min-depth: 1.
     inverse-depth: true
     train:
       2011-10-03: [27, 42, 34]
       2011-09-30: [16, 18, 20, 27, 28]
-      #2011-10-03: [27]
-      #2011-09-30: [16, 18, 20, 27]
     test:
       2011-10-03: [27, 42, 34]
       2011-09-30: [16, 18, 20, 27, 28, 33, 34]
@@ -25,8 +23,8 @@ datasets:
       2011-09-30: [33, 34]
 
     # channesl: x, y, z, remission, nx, ny ,nz, range)
-    mean-image: [-0.0002, 0.0067, -0.0172, 0.2216, -0.003, 0.0029, 0.3707, 0.1077]
-    std-image: [0.1735, 0.1363, 0.0167, 0.1769, 0.3337, 0.4275, 0.5692, 0.0882]
+    mean-image: [-0.0014, 0.0043, -0.011, 0.2258, -0.0024, 0.0037, 0.3793, 0.1115]
+    std-image: [0.1269, 0.0951, 0.0108, 0.1758, 0.3436, 0.4445, 0.5664, 0.0884]
 
     mean-imu: [-0.0685, 0.1672, 9.7967, -0., 0.0006, 0.0059]
     std-imu: [0.8766, 0.9528, 0.3471, 0.0204, 0.0227, 0.1412]
@@ -42,7 +40,7 @@ deeplio:
     pretrained: false
     model-path: ""
   imu-feat-net:
-    name: #"imu-feat-rnn"
+    name: "imu-feat-rnn"
     pretrained: false
     model-path: ""
   odom-feat-net:

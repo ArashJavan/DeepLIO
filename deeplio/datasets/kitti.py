@@ -329,6 +329,9 @@ class Kitti(data.Dataset):
         return imus, valids
 
     def transform_images(self):
+        imgs_org = torch.stack([torch.from_numpy(im.transpose(2, 0, 1)) for im in self.images])
+        imgs_org = imgs_org[:, self.channels]
+
         ct, cl = self.crop_top, self.crop_left
         mean = torch.as_tensor(self.mean_img)
         std = torch.as_tensor(self.std_img)
@@ -344,7 +347,7 @@ class Kitti(data.Dataset):
         imgs_normalized.sub_(mean[None, :, None, None]).div_(std[None, :, None, None])
         imgs_normalized = imgs_normalized[:, self.channels]
 
-        return imgs_normalized
+        return imgs_org, imgs_normalized
 
     def transform_imus(self, imus):
         imus_norm = [torch.from_numpy((imu - self.mean_imu) / self.std_imu).type(torch.float32) for imu in imus]
@@ -388,8 +391,8 @@ class Kitti(data.Dataset):
     def create_lidar_data(self, dataset, indices, velo_timespamps):
         # load and transform images
         self.load_images(dataset, indices)
-        proc_images = self.transform_images()
-        data = {'images': proc_images}
+        org_images, proc_images = self.transform_images()
+        data = {'images': proc_images, 'untrans-images': org_images}
         return data
 
     def create_data_deeplio(self, dataset, indices, velo_timespamps):
