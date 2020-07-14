@@ -91,7 +91,7 @@ class Fire(BaseBlk):
         self.bypass = bypass
         self.bn = bn
 
-        self.activation = nn.ReLU(inplace=True)
+        self.activation = nn.ELU(inplace=True) # nn.ReLU(inplace=True)
 
         self.squeeze = nn.Conv2d(inplanes, squeeze_planes, kernel_size=1)
         if self.bn:
@@ -135,7 +135,7 @@ class Fire(BaseBlk):
             if self.upsample:
                 identity = self.upsample(identity)
             out += identity
-            out = F.relu(out, inplace=True)
+            out = F.elu(out, inplace=True)
         return out
 
 

@@ -111,31 +111,36 @@ class PSEncoder2(BaseNet):
         self.pool1 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=1)   # 1/4
 
         # First block
-        self.fire2 = Fire(64, 16, 64, 64, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.fire3 = Fire(128, 16, 64, 64, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.fire4 = Fire(128, 32, 128, 128, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.se1 = SELayer(256, reduction=2)
-        self.pool2 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=1)  # 1/8
+        self.fire_blk1 = nn.Sequential(
+            Fire(64, 16, 64, 64, bn=True, bn_d=bn_d, bypass=self.bypass),
+            Fire(128, 16, 64, 64, bn=True, bn_d=bn_d, bypass=self.bypass),
+            Fire(128, 32, 128, 128, bn=True, bn_d=bn_d, bypass=self.bypass),
+            Fire(256, 32, 128, 128, bn=True, bn_d=bn_d, bypass=self.bypass),
+            SELayer(256, reduction=2),
+            nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=1))  # 1/8
 
         # second block
-        self.fire5 = Fire(256, 32, 128, 128, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.fire6 = Fire(256, 48, 192, 192, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.fire7 = Fire(384, 48, 192, 192, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.fire8 = Fire(384, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.se2 = SELayer(512, reduction=2)
-        self.pool3 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1)  # 1/16
+        self.fire_blk2 =nn.Sequential(
+            Fire(256, 32, 128, 128, bn=True, bn_d=bn_d, bypass=self.bypass),
+            Fire(256, 48, 192, 192, bn=True, bn_d=bn_d, bypass=self.bypass),
+            Fire(384, 48, 192, 192, bn=True, bn_d=bn_d, bypass=self.bypass),
+            Fire(384, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass),
+            SELayer(512, reduction=2),
+            nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1))  # 1/16
 
         # third block
-        self.fire9 = Fire(512, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.fire10 = Fire(512, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.se3 = SELayer(512, reduction=2)
-        self.pool4 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1) # 1/32
+        self.fire_blk3 = nn.Sequential(
+            Fire(512, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass),
+            Fire(512, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass),
+            SELayer(512, reduction=2),
+            nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1)) # 1/32
 
         # third block
-        self.fire11 = Fire(512, 64, 384, 384, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.fire12 = Fire(768, 96, 384, 384, bn=True, bn_d=bn_d, bypass=self.bypass)
-        #self.se4 = SELayer(768, reduction=2)
-        #self.pool5 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1) # 1/32
+        self.fire_blk4 = nn.Sequential(
+            Fire(512, 64, 384, 384, bn=True, bn_d=bn_d, bypass=self.bypass),
+            Fire(768, 96, 384, 384, bn=True, bn_d=bn_d, bypass=False),
+            SELayer(768, reduction=2),
+            nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1)) # 1/32
 
         self.output_shapes = self.calc_output_shape()
 
@@ -144,34 +149,11 @@ class PSEncoder2(BaseNet):
         x_p1 = self.pool1(x_1a)
 
         ### Encoder forward
-        # first fire block
-        x_f2 = self.fire2(x_p1)
-        x_f3 = self.fire3(x_f2)
-        x_f4 = self.fire4(x_f3)
-        x_se1 = self.se1(x_f4)
-        x_p2 = self.pool2(x_se1)
-
-        x_f5 = self.fire5(x_p2)
-        x_f6 = self.fire6(x_f5)
-        x_f7 = self.fire7(x_f6)
-        x_f8 = self.fire8(x_f7)
-        x_se2 = self.se2(x_f8)
-        x_p3 = self.pool3(x_se2)
-
-        # second fire block
-        x_f9 = self.fire9(x_p3)
-        x_f10 = self.fire10(x_f9)
-        x_se3 = self.se3(x_f10)
-        x_p4 = self.pool4(x_se3)
-
-        # third fire block
-        x_f11 = self.fire11(x_p4)
-        x_f12 = self.fire12(x_f11)
-        #x_se4 = self.se4(x_f12)
-        #x_p5 = self.pool5(x_se4)
-
-        out = x_f12
-        return out
+        x = self.fire_blk1(x_p1)
+        x = self.fire_blk2(x)
+        x = self.fire_blk3(x)
+        x = self.fire_blk4(x)
+        return x
 
     def calc_output_shape(self):
         c, h, w = self.input_shape

@@ -25,7 +25,7 @@ def set_seed(seed=42):
 
 
 def worker_init_fn(worker_id):
-    pass # set_seed(seed=SEED)
+    set_seed(seed=SEED)
 
 
 class Worker:
@@ -74,9 +74,9 @@ class Worker:
 
         torch.cuda.empty_cache()
         cudnn.benchmark = True
-        cudnn.deterministic = False
+        cudnn.deterministic = True
 
-        #set_seed(seed=SEED)
+        set_seed(seed=SEED)
 
         flog_name = "{}/{}_{}.log".format(log_dir, self.ACTION, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
         if args.debug:

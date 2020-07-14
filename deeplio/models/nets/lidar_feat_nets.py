@@ -61,16 +61,14 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         b, c, h, w = enc_out_shapes
 
         #self.fire12 = nn.Sequential(Fire(768, 96, 384, 384, bn=True, bn_d=self.bn_d, bypass=False),
-        #                            Fire(768, 96, 384, 384, bn=True, bn_d=self.bn_d, bypass=False),
-        #                            SELayer(768, reduction=2),
-        #                            nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)))
+        #                            Fire(768, 96, 384, 384, bn=True, bn_d=self.bn_d, bypass=False))
 
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
+        self.fc1 = nn.Linear(768, 128)
+
         if self.p > 0.:
             self.drop = nn.Dropout(self.p)
-
-        self.fc1 = nn.Linear(768, 128)
 
         self.output_shape = self.calc_output_shape()
 
@@ -85,8 +83,8 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
         imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
 
-        x_feat_0 = self.encoder1(imgs_xyz)
-        x_feat_1 = self.encoder2(imgs_normals)
+        x_feat_0 = F.adaptive_avg_pool2d(self.encoder1(imgs_xyz), (1, 1)).flatten(1)
+        x_feat_1 = F.adaptive_avg_pool2d(self.encoder2(imgs_normals), (1, 1)).flatten(1)
 
         if self.fusion == 'cat':
             x = torch.cat((x_feat_0, x_feat_1), dim=1)
@@ -96,14 +94,13 @@ class LidarPointSegFeat(BaseLidarFeatNet):
             x = x_feat_0 - x_feat_1
 
         #x = self.fire12(x)
-        #x = self.fire34(x)[:, :, 0, 0]
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
+        #x = self.avgpool(x)
+        #x = torch.flatten(x, 1)
+
+        #x = F.elu(self.fc1(x), inplace=True) # F.leaky_relu(self.fc1(x), inplace=True, negative_slope=0.01)
 
         if self.p > 0.:
             x = self.drop(x)
-
-        x = F.leaky_relu(self.fc1(x))
 
         # reshape output to BxTxCxHxW
         x = x.view(b, s, num_flat_features(x, 1))
