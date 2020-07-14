@@ -60,16 +60,12 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         # number of output channels in encoder
         b, c, h, w = enc_out_shapes
 
-        alpha = 2 if self.fusion == 'cat' else 1
-        #self.fire12 = nn.Sequential(Fire(alpha*c, 64, 256, 256, bn=True, bn_d=self.bn_d),
-        #                            Fire(512, 64, 256, 256, bn=True, bn_d=self.bn_d),
-        #                            SELayer(512, reduction=2),
+        #self.fire12 = nn.Sequential(Fire(768, 96, 384, 384, bn=True, bn_d=self.bn_d, bypass=False),
+        #                            Fire(768, 96, 384, 384, bn=True, bn_d=self.bn_d, bypass=False),
+        #                            SELayer(768, reduction=2),
         #                            nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)))
 
-        #self.fire34 = nn.Sequential(Fire(512, 80, 384, 384, bn=True, bn_d=self.bn_d),
-        #                            Fire(768, 80, 384, 384, bn=True, bn_d=self.bn_d),
-        #                            #nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=(1, 1)),
-        #                            nn.AdaptiveAvgPool2d((1, 1)))
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         if self.p > 0.:
             self.drop = nn.Dropout(self.p)
@@ -80,7 +76,6 @@ class LidarPointSegFeat(BaseLidarFeatNet):
 
     def forward(self, x):
         """
-
         :param inputs: images of dimension [BxTxCxHxW], where T is seq-size+1, e.g. 2+1
         :return: outputs: features of dim [BxTxN]
         mask0: predicted mask to each time sequence
@@ -99,9 +94,11 @@ class LidarPointSegFeat(BaseLidarFeatNet):
             x = x_feat_0 + x_feat_1
         else:
             x = x_feat_0 - x_feat_1
-        x = x[:, :, 0, 0]
+
         #x = self.fire12(x)
         #x = self.fire34(x)[:, :, 0, 0]
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
 
         if self.p > 0.:
             x = self.drop(x)

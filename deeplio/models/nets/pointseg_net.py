@@ -105,7 +105,7 @@ class PSEncoder2(BaseNet):
         c, h, w = self.input_shape
 
         ### Ecnoder part
-        self.conv1a = nn.Sequential(nn.Conv2d(c, 64, kernel_size=(5, 7), stride=(1, 2), padding=(2, 3)),
+        self.conv1a = nn.Sequential(nn.Conv2d(c, 64, kernel_size=(3, 5), stride=(1, 2), padding=(1, 2)),
                                     nn.BatchNorm2d(64, momentum=bn_d),
                                     nn.ReLU(inplace=True))
         self.pool1 = nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=1)   # 1/4
@@ -133,9 +133,9 @@ class PSEncoder2(BaseNet):
 
         # third block
         self.fire11 = Fire(512, 64, 384, 384, bn=True, bn_d=bn_d, bypass=self.bypass)
-        self.fire12 = Fire(768, 96, 384, 384, bn=True, bn_d=bn_d, bypass=False)
-
-        self.pool5 = nn.AdaptiveAvgPool2d((1, 1))
+        self.fire12 = Fire(768, 96, 384, 384, bn=True, bn_d=bn_d, bypass=self.bypass)
+        #self.se4 = SELayer(768, reduction=2)
+        #self.pool5 = nn.MaxPool2d(kernel_size=3, stride=(2, 2), padding=1) # 1/32
 
         self.output_shapes = self.calc_output_shape()
 
@@ -167,10 +167,10 @@ class PSEncoder2(BaseNet):
         # third fire block
         x_f11 = self.fire11(x_p4)
         x_f12 = self.fire12(x_f11)
+        #x_se4 = self.se4(x_f12)
+        #x_p5 = self.pool5(x_se4)
 
-        x_p = self.pool5(x_f12)
-
-        out = x_p
+        out = x_f12
         return out
 
     def calc_output_shape(self):
