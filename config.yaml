@@ -1,11 +1,11 @@
 datasets:
-  sequence-size: 3 # must be >= 1
-  combinations: [[0, 1], [1, 2], [2, 3]]
+  sequence-size: 4 # must be >= 1
+  combinations: [[0, 1], [1, 2], [2, 3], [3, 4]]
   kitti:
     root-path-sync: "datasets/KITTI/sync"
     root-path-unsync: "datasets/KITTI/extract"
     image-width: 720
-    image-height: 64
+    image-height: 57
     crop-factors: [0, 0] # [0, 4] # top, left
     fov-up: 3.
     fov-down: -25.
@@ -81,8 +81,8 @@ lidar-feat-simple-1:
 # IMU Feature Netowrks
 imu-feat-fc:  # FC
   input-size: 6  # !fixed! do not chanage
-  hidden-size: [1024, 512, 256]
-  dropout: 0.25
+  hidden-size: [128, 256]
+  dropout: 0.
 
 imu-feat-rnn: # RNN
   type: "lstm"
@@ -102,15 +102,15 @@ fusion-layer-soft:
 ### Odometry Feature Netowrks ###########################
 # odometry feature network with fully connected layers
 odom-feat-fc:
-  size: [1024, 512]
+  size: [1024, 512, 256]
   dropout: 0.
 
 # odometry feature network with rnn-layers
 odom-feat-rnn:
   type: "lstm"
-  hidden-size: 128
+  hidden-size: 1024
   num-layers: 2
-  bidirectional: true
+  bidirectional: false
   dropout: 0.
 
 ### Loss Configurations ###########################

@@ -197,8 +197,8 @@ class Trainer(Worker):
             if self.data_last is None:
                 self.data_last = data
 
-            #if not np.alltrue(data['valids']):
-            #    continue
+            if self.has_imu and not np.alltrue(data['valids']):
+                continue
 
             # measure data loading time
             data_time.update(time.time() - end)
@@ -430,7 +430,6 @@ class TrainerDeepLIO(Trainer):
         imu_data = torch.rand((self.batch_size,  self.seq_size, 10, 6)).to(self.device)
         self.model.eval()
         self.logger.print(summary(self.model, [[xyz_data, normal_data], imu_data]))
-        self.logger.print(summary(self.model.lidar_feat_net, [xyz_data, normal_data]))
 
     def post_train_iter(self):
         if self.has_lidar:

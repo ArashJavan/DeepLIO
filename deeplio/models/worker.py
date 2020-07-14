@@ -74,7 +74,7 @@ class Worker:
 
         torch.cuda.empty_cache()
         cudnn.benchmark = True
-        cudnn.deterministic = True
+        cudnn.deterministic = False
 
         set_seed(seed=SEED)
 

@@ -72,11 +72,6 @@ class ImufeatRNN0(BaseImuFeatNet):
 
     def forward(self, x):
         b, s, t, n = x.shape
-
-        zeros = torch.zeros(self.num_layers * self.num_dir,
-                            b, self.hidden_size,
-                            dtype=x.dtype, device=x.device)
-
         h_state = None
         outputs = torch.zeros((b, s, self.hidden_size)).to(x.device)
         for seq in range(s):
