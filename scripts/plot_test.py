@@ -29,34 +29,6 @@ colors = ['red',
           'brown'
           ]
 
-# colors = ['red',
-#           'green',
-#           'blue',
-#           'fuchsia',
-#           'darkgreen',
-#           'navy',
-#           'orange',
-#           'violet',
-#           'yellow',
-#           'brown'
-#           ]
-
-colors = ['#1f77b4',
-            '#ff7f0e',
-            '#2ca02c',
-            '#d62728',
-            '#9467bd',
-            '#8c564b',
-            '#e377c2',
-            '#7f7f7f',
-            '#bcbd22',
-            '#17becf',
-          'black',
-          'red',
-          'green',
-          'blue'
-]
-
 tests_idx = [1, 5, 8, 10]
 
 def plot_from_csvs(csvs, suffix='pred_x'):
@@ -89,15 +61,15 @@ def plot_from_csvs(csvs, suffix='pred_x'):
         losses = traj[:, 33]
 
         if i == 0:
-            ax_map.plot(T_glob_gt[:, 0, 3], T_glob_gt[:, 1, 3], alpha=0.8, linewidth=2, label='Ground Truth', color='black')
+            ax_map.plot(T_glob_gt[:, 0, 3], T_glob_gt[:, 1, 3], alpha=0.8, linewidth=1.5, label='Ground Truth', color='black')
             #ax_map.scatter(T_glob_gt[:, 0, 3], T_glob_gt[:, 1, 3], alpha=0.5, s=0.1)
         if test_nr not in map_exclude:
-            ax_map.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], colors[test_nr-1], alpha=0.8, linewidth=1,
+            ax_map.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], colors[test_nr], alpha=0.8, linewidth=1,
                         label='Test {}'.format(test_lbl))
             #ax_map.scatter(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, s=0.1)
 
         if test_nr not in loss_exclude:
-            ax_loss.plot(range(len(losses)), losses, colors[test_nr-1], alpha=1, linewidth=1, label='Test {}'.format(test_lbl),
+            ax_loss.plot(range(len(losses)), losses, colors[test_nr], alpha=0.8, linewidth=1, label='Test {}'.format(test_lbl),
                        )
             #ax_loss.scatter(range(len(losses)), losses, alpha=0.5, s=0.1)
 
@@ -128,6 +100,10 @@ for map in maps:
     csvs_map = np.array(sorted(csvs_map, key=lambda csv: csv.split('/')[-3]))
     csv_map_xq = csvs_map[['xq' in csv for  csv in csvs_map]]
     csv_map_x = csvs_map[['x' in csv and 'xq' not in csv for csv in csvs_map]]
+    csv_map_q = csvs_map[['q' in csv and 'xq' not in csv for csv in csvs_map]]
+
     plot_from_csvs(csv_map_x, suffix='pred_x')
+    plot_from_csvs(csv_map_xq, suffix='pred_q')
     plot_from_csvs(csv_map_xq, suffix='pred_xq')
+
 print("done!")
