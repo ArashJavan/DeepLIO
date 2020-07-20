@@ -32,7 +32,7 @@ datasets:
 
 ### DeepLIO Network ##############################
 deeplio:
-  dropout: 0.25
+  dropout: 0.5
   pretrained: false
   model-path: ""
   lidar-feat-net:
@@ -79,7 +79,7 @@ lidar-feat-simple-1:
 # IMU Feature Netowrks
 imu-feat-fc:  # FC
   input-size: 6  # !fixed! do not chanage
-  hidden-size: [128, 256]
+  hidden-size: [128, 512, 512, 128]
   dropout: 0.
 
 imu-feat-rnn: # RNN
@@ -109,7 +109,7 @@ odom-feat-rnn:
   hidden-size: 1024
   num-layers: 2
   bidirectional: false
-  dropout: 0.
+  dropout: 0.25
 
 ### Loss Configurations ###########################
 losses:

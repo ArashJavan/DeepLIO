@@ -38,6 +38,7 @@ class Trainer(Worker):
         self.epochs = args.epochs
         self.best_acc = float('inf')
         self.step_val = 0.
+        self.max_glob_seq = 3
 
         # create the folder for saving training checkpoints
         self.checkpoint_dir = self.out_dir
@@ -168,8 +169,6 @@ class Trainer(Worker):
         self.close()
 
     def train(self, epoch):
-        optimizer = self.optimizer
-
         # switch to train mode
         self.model.train()
         self.criterion.train()
@@ -246,7 +245,7 @@ class Trainer(Worker):
             loss = self.criterion(pred_f2f_x, pred_f2f_r,
                                   pred_f2g_x, pred_f2g_r,
                                   gt_f2f_x, gt_f2f_q,
-                                  gt_f2g_x, gt_f2g_q)
+                                  gt_f2g_x[:, 0:self.max_glob_seq, :], gt_f2g_q[:, 0:self.max_glob_seq, :])
 
             # measure accuracy and record loss
             losses.update(loss.detach().item(), self.batch_size*self.seq_size)
@@ -309,6 +308,7 @@ class Trainer(Worker):
 
     def se3_to_SE3(self, f2f_x, f2f_r):
         batch_size, seq_size, _ = f2f_x.shape
+        seq_size = self.max_glob_seq
 
         f2g_q = torch.zeros((batch_size, seq_size, 4), dtype=f2f_x.dtype, device=f2f_x.device)
         f2g_x = torch.zeros((batch_size, seq_size, 3), dtype=f2f_x.dtype, device=f2f_x.device)
@@ -391,7 +391,7 @@ class Trainer(Worker):
                 loss = self.criterion(pred_f2f_x, pred_f2f_r,
                                       pred_f2g_x, pred_f2g_r,
                                       gt_f2f_x, gt_f2f_q,
-                                      gt_f2g_x, gt_f2g_q)
+                                      gt_f2g_x[:, 0:self.max_glob_seq, :], gt_f2g_q[:, 0:self.max_glob_seq, :])
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), self.batch_size*self.seq_size)
