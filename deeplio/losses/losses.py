@@ -11,39 +11,47 @@ from deeplio.common.spatial import normalize_quaternion, quaternion_to_rotation_
 class LWSLoss(nn.Module):
     """Linear weighted sum loss
     """
-    def __init__(self, beta=1125., gamma=1., q_norm_loss=False, ):
+    def __init__(self, beta=1125., gamma=1., loss_Types=[True, True]):
         super(LWSLoss, self).__init__()
         self.loss_fn = nn.MSELoss()
         self.beta = beta
         self.gamma = gamma
-        self.q_norm_loss = q_norm_loss
-
-    def forward1(self, x_pred, q_pred, x_gt, q_gt):
-        x_hat = x_pred
-        q_hat = normalize_quaternion(q_pred)
-
-        x_loss = self.loss_fn(x_hat, x_gt)
-        q_loss = self.loss_fn(q_hat, q_gt)
-        loss = x_loss + self.beta * q_loss
-        return loss
+        self.loss_Types = loss_Types
 
     def forward(self, pred_f2f_x, pred_f2f_r, pred_f2g_x, pred_f2g_r,
                 gt_f2f_x, gt_f2f_r, gt_f2g_x, gt_f2g_q):
 
-        L_x = F.mse_loss(pred_f2f_x, gt_f2f_x) + F.mse_loss(pred_f2g_x, gt_f2g_x)
-        L_r = F.mse_loss(pred_f2f_r, gt_f2f_r) + F.l1_loss(pred_f2g_r, gt_f2g_q)
+        if self.loss_Types[0]:
+            L_t = F.mse_loss(pred_f2f_x, gt_f2f_x)
+            L_w = F.mse_loss(pred_f2f_r, gt_f2f_r)
+        else:
+            L_t = 0.
+            L_w = 0.
 
-        #L_x = F.mse_loss(pred_f2g_x, gt_f2g_x)
-        #L_r = F.mse_loss(pred_f2g_r, gt_f2g_q)
+        if self.loss_Types[1]:
+            L_p = F.mse_loss(pred_f2g_x, gt_f2g_x)
+            L_q = F.mse_loss(pred_f2g_r, gt_f2g_q)
+        else:
+            L_p = 0.
+            L_q = 0.
 
-        loss = L_x + self.beta * L_r
+        loss = (L_p + L_t) + self.beta * (L_q + L_w)
         return loss
 
+    def __repr__(self):
+        if self.loss_Types[0] and self.loss_Types[1]:
+            return "HWSLoss with f2f and f2g loss."
+        elif self.loss_Types[0]:
+            return "HWSLoss with only f2f loss."
+        elif self.loss_Types[1]:
+            return "HWSLoss with only f2g loss."
+        else:
+            return "Wrong loss combination!"
 
 class HWSLoss(nn.Module):
     """Homoscedastic weighted Loss
     """
-    def __init__(self, sx=0., sq=-2.5, learn_hyper_params=True, device="cpu"):
+    def __init__(self, sx=0., sq=-2.5, learn_hyper_params=True, device="cpu", loss_Types=[True, True]):
         """
         :param sx:
         :param sq:
@@ -51,6 +59,7 @@ class HWSLoss(nn.Module):
         """
         super(HWSLoss, self).__init__()
         self.learn_hyper_params = learn_hyper_params
+        self.loss_Types = loss_Types
 
         self.sx = torch.nn.Parameter(torch.tensor(sx, device=device, requires_grad=learn_hyper_params))
         self.sq = torch.nn.Parameter(torch.tensor(sq, device=device, requires_grad=learn_hyper_params))
@@ -59,18 +68,32 @@ class HWSLoss(nn.Module):
     def forward(self, pred_f2f_x, pred_f2f_r, pred_f2g_x, pred_f2g_r,
                 gt_f2f_x, gt_f2f_r, gt_f2g_x, gt_f2g_q):
 
-        L_x = F.mse_loss(pred_f2f_x, gt_f2f_x) + F.mse_loss(pred_f2g_x, gt_f2g_x)
-        L_r = F.mse_loss(pred_f2f_r, gt_f2f_r) + F.l1_loss(pred_f2g_r, gt_f2g_q)
+        if self.loss_Types[0]:
+            L_t = F.mse_loss(pred_f2f_x, gt_f2f_x)
+            L_w = F.mse_loss(pred_f2f_r, gt_f2f_r)
+        else:
+            L_t = 0.
+            L_w = 0.
 
-        #L_x = F.mse_loss(pred_f2g_x, gt_f2g_x)
-        #L_r = F.mse_loss(pred_f2g_r, gt_f2g_q)
+        if self.loss_Types[1]:
+            L_p = F.mse_loss(pred_f2g_x, gt_f2g_x)
+            L_q = F.mse_loss(pred_f2g_r, gt_f2g_q)
+        else:
+            L_p = 0.
+            L_q = 0.
 
-        #L_x = F.mse_loss(pred_f2f_x, gt_f2f_x)
-        #L_r = F.mse_loss(pred_f2f_r, gt_f2f_r)
-
-        loss = L_x * torch.exp(-self.sx) + self.sx + L_r * torch.exp(-self.sq) + self.sq
+        loss = (L_p + L_t) * torch.exp(-self.sx) + self.sx + (L_q + L_w) * torch.exp(-self.sq) + self.sq
         return loss
 
+    def __repr__(self):
+        if self.loss_Types[0] and self.loss_Types[1]:
+            return "HWSLoss with f2f and f2g loss."
+        elif self.loss_Types[0]:
+            return "HWSLoss with only f2f loss."
+        elif self.loss_Types[1]:
+            return "HWSLoss with only f2g loss."
+        else:
+            return "Wrong loss combination!"
 
 class GeometricConsistencyLoss(nn.Module):
     def __init__(self, H=64, W=1800, fov_up=3.0, fov_down=-25.0, min_depth=1, max_depth=80):

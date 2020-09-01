@@ -30,7 +30,7 @@ class ImuFeatFC(BaseImuFeatNet):
             layers.append(l)
 
         if self.p > 0.:
-            layers.append(nn.Dropout(self.p))
+            self.dropout = nn.Dropout(self.p)
         self.net = nn.ModuleList(layers)
 
         self.output_shape = [1, self.seq_size, self.hidden_size[-1]]
@@ -45,6 +45,8 @@ class ImuFeatFC(BaseImuFeatNet):
                 y = x[b][s]
                 for m in self.net:
                     y = F.leaky_relu(m(y), negative_slope=0.01, inplace=True)
+                if self.p > 0:
+                    y = self.dropout(y)
                 outputs.append(torch.sum(y, dim=0))
         outputs = torch.stack(outputs)
         outputs = outputs.view(batch_size, self.seq_size, -1)

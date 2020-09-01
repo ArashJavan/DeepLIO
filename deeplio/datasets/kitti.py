@@ -17,10 +17,24 @@ class KittiRawData:
     """ KiitiRawData
     more or less same as pykitti with some application specific changes
     """
+    SEQ_NUM = {
+        "2011_10_03_0027": 0,
+        "2011_10_03_0042": 1,
+        "2011_10_03_0034": 2,
+        "2011_09_30_0016": 4,
+        "2011_09_30_0018": 5,
+        "2011_09_30_0020": 6,
+        "2011_09_30_0027": 7,
+        "2011_09_30_0028": 8,
+        "2011_09_30_0033": 9,
+        "2011_09_30_0034": 10,
+    }
+
     def __init__(self, base_path_sync, base_path_unsync, date, drive,
                  cfg=None, oxts_bin=False, oxts_txt=False, max_points=150000, **kwargs):
         self.drive = drive
         self.date = date
+        self.seq_nr = self.SEQ_NUM['{}_{}'.format(self.date, self.drive)]
 
         self.dataset_sync = 'sync'
         self.dataset_unsync = 'extract'
@@ -201,7 +215,7 @@ class Kitti(data.Dataset):
     # In unsynced KITTI raw dataset are some timestamp holes - i.g. 2011_10_03_27
     # e.g. there is no corresponding IMU/GPS measurment to some velodyne frames,
     # We set the min. no. so we can check and ignore these holes.
-    DEFAULT_NUM_OXT_SAMPLES = 11
+    DEFAULT_NUM_OXT_SAMPLES = 15
 
     def __init__(self, config, ds_type='train', transform=None, has_imu=True, has_lidar=True):
         """

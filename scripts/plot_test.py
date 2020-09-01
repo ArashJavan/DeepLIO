@@ -20,10 +20,9 @@ map_exclude = [] # [1, 3, 6, 7, 8]
 colors = ['red',
           'green',
           'blue',
-          'fuchsia',
+          'orange',
           'darkgreen',
           'navy',
-          'orange',
           'violet',
           'yellow',
           'brown'
@@ -61,7 +60,7 @@ def plot_from_csvs(csvs, suffix='pred_x'):
         losses = traj[:, 33]
 
         if i == 0:
-            ax_map.plot(T_glob_gt[:, 0, 3], T_glob_gt[:, 1, 3], alpha=0.8, linewidth=1.5, label='Ground Truth', color='black')
+            ax_map.plot(T_glob_gt[:, 0, 3], T_glob_gt[:, 1, 3], alpha=0.8, linewidth=1, label='Ground Truth', color='black')
             #ax_map.scatter(T_glob_gt[:, 0, 3], T_glob_gt[:, 1, 3], alpha=0.5, s=0.1)
         if test_nr not in map_exclude:
             ax_map.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], colors[test_nr], alpha=0.8, linewidth=1,
@@ -81,12 +80,17 @@ def plot_from_csvs(csvs, suffix='pred_x'):
     plt.close(fig_map)
     plt.close(fig_loss)
 
+
 maps = ['2011_10_03_0027',
+        '2011_10_03_0042',
         '2011_10_03_0034',
         '2011_09_30_0016',
         '2011_09_30_0018',
+        '2011_09_30_0020',
+        '2011_09_30_0027',
+        '2011_09_30_0028',
         '2011_09_30_0033',
-        '2011_09_30_0034'
+        '2011_09_30_0034',
         ]
 
 csv_pathes = list(Path("{}/outputs".format(content_dir)).rglob('*.csv'))
@@ -101,9 +105,8 @@ for map in maps:
     csv_map_xq = csvs_map[['xq' in csv for  csv in csvs_map]]
     csv_map_x = csvs_map[['x' in csv and 'xq' not in csv for csv in csvs_map]]
     csv_map_q = csvs_map[['q' in csv and 'xq' not in csv for csv in csvs_map]]
-
     plot_from_csvs(csv_map_x, suffix='pred_x')
-    plot_from_csvs(csv_map_xq, suffix='pred_q')
     plot_from_csvs(csv_map_xq, suffix='pred_xq')
+    plot_from_csvs(csv_map_q, suffix='pred_q')
 
 print("done!")
