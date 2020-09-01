@@ -60,7 +60,7 @@ class HWSLoss(nn.Module):
                 gt_f2f_x, gt_f2f_r, gt_f2g_x, gt_f2g_q):
 
         L_x = F.mse_loss(pred_f2f_x, gt_f2f_x) + F.mse_loss(pred_f2g_x, gt_f2g_x)
-        L_r = F.mse_loss(pred_f2f_r, gt_f2f_r) + F.l1_loss(pred_f2g_r, gt_f2g_q)
+        L_r = F.mse_loss(pred_f2f_r, gt_f2f_r) + F.mse_loss(pred_f2g_r, gt_f2g_q)
 
         #L_x = F.mse_loss(pred_f2g_x, gt_f2g_x)
         #L_r = F.mse_loss(pred_f2g_r, gt_f2g_q)

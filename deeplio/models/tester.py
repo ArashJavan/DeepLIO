@@ -249,30 +249,9 @@ class Tester(Worker):
                 f2g_x[b, s] = t_prev
         return f2g_x, f2g_q
 
-    def eval_model_and_loss(self, imgs,imus, gt_local_x, gt_local_q):
-        pred_x = None
-        pred_q = None
-        loss = None
-        return pred_x, pred_q, loss
-
 
 class TesterDeepLIO(Tester):
     ACTION = "test_deeplio"
-
-    def eval_model_and_loss(self, imgs, imus, gt_local_x, gt_local_q):
-        # compute model predictions and loss
-        pred_x, pred_q = self.model([imgs, imus])
-
-        # rotation
-        if self.args.param == 'xq':
-            loss = self.criterion(pred_x, pred_q, gt_local_x, gt_local_q)
-        elif self.args.param == 'x':
-            loss = self.criterion(pred_x, gt_local_q, gt_local_x, gt_local_q)
-        elif self.args.param == 'q':
-            loss = self.criterion(gt_local_x, pred_q, gt_local_x, gt_local_q)
-        else:
-            loss = self.criterion(gt_local_x, gt_local_q, gt_local_x, gt_local_q)
-        return pred_x, pred_q, loss
 
 
 class OdomSeqRes:
@@ -301,24 +280,30 @@ class OdomSeqRes:
             T_glob_pred.append(T)
             T_0i = np.copy(T)
 
-        self.T_global = np.array(self.T_global)
+        self.T_global = np.array(self.T_global)[:, :3, :]
         self.T_local_pred = np.array(self.T_local_pred)
         T_glob_pred = np.array(T_glob_pred)
 
         self.timestamps = np.asarray(self.timestamps).reshape(-1, 1)
         self.loss = np.asarray(self.loss).reshape(-1, 1)
 
-        res = np.hstack((self.timestamps,
+        T_glob_pred = T_glob_pred[:, :3, :]
+        res1 = np.hstack((self.timestamps,
                          T_glob_pred.reshape(len(T_glob_pred), -1),
                          self.T_global.reshape(len(self.T_global), -1),
                          self.loss))
 
         fname = "{}/{}_{}.csv".format(self.out_dir, self.date, self.drive)
-        np.savetxt(fname, res, fmt='%.5f', delimiter=',')
+        np.savetxt(fname, res1, fmt='%.5f', delimiter=',')
+
+        indices = np.arange(len(T_glob_pred))
+        res_metric = T_glob_pred.reshape(len(T_glob_pred), -1)
+
+        fname = "{}/{}_{}.txt".format(self.out_dir, self.date, self.drive)
+        np.savetxt(fname, res_metric, fmt=['%.6f'] * 12, delimiter=' ')
 
         fname = "{}/{}_{}.png".format(self.out_dir, self.date, self.drive)
         plt.figure()
-
         plt.plot(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5, linewidth=1, label="GT")
         plt.scatter(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.7, s=0.5)
 
