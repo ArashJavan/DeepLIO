@@ -215,7 +215,7 @@ class Kitti(data.Dataset):
     # In unsynced KITTI raw dataset are some timestamp holes - i.g. 2011_10_03_27
     # e.g. there is no corresponding IMU/GPS measurment to some velodyne frames,
     # We set the min. no. so we can check and ignore these holes.
-    DEFAULT_NUM_OXT_SAMPLES = 11
+    DEFAULT_NUM_OXT_SAMPLES = 15
 
     def __init__(self, config, ds_type='train', transform=None, has_imu=True, has_lidar=True):
         """

@@ -50,7 +50,7 @@ class DeepLIO(BaseDeepLIO):
                 last_layer = net
                 break
 
-        in_shape = last_layer.get_output_shape()[2] # [N]
+        in_shape = last_layer.get_output_shape()[2] # [B, S, N]
 
         if self.p > 0:
             self.drop = nn.Dropout(self.p)
@@ -72,12 +72,10 @@ class DeepLIO(BaseDeepLIO):
             x_feat_imu = self.imu_feat_net(imu_meas)
             x_last_feat = x_feat_imu
 
-        x_fusion = None
         if self.fusion_net is not None:
             x_fusion = self.fusion_net([x_feat_lidar, x_feat_imu])
             x_last_feat = x_fusion
 
-        x_odom = None
         if self.odom_feat_net is not None:
             x_odom = self.odom_feat_net(x_last_feat)
             x_last_feat = x_odom

@@ -1,6 +1,6 @@
 datasets:
-  sequence-size: 4 # must be >= 1
-  combinations: [[0, 1], [1, 2], [2, 3], [3, 4]]
+  sequence-size: 5 # must be >= 1
+  combinations: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]]
   kitti:
     root-path-sync: "datasets/KITTI/sync"
     root-path-unsync: "datasets/KITTI/extract"
@@ -29,22 +29,21 @@ datasets:
     mean-imu: [-0.0685, 0.1672, 9.7967, -0., 0.0006, 0.0059]
     std-imu: [0.8766, 0.9528, 0.3471, 0.0204, 0.0227, 0.1412]
 
-
 ### DeepLIO Network ##############################
 deeplio:
-  dropout: 0.5
+  dropout: 0.25
   pretrained: false
   model-path: ""
   lidar-feat-net:
-    name: "lidar-feat-pointseg"
+    name: #"lidar-feat-flownet"
     pretrained: false
     model-path: ""
   imu-feat-net:
-    name: "imu-feat-rnn"
+    name: "imu-feat-fc"
     pretrained: false
     model-path: ""
   odom-feat-net:
-    name: "odom-feat-rnn"
+    name: #"odom-feat-rnn"
     pretrained: false
     model-path: ""
   fusion-net:
@@ -118,12 +117,11 @@ losses:
     params:
       learn: true
       sx: 0.
-      sq: -3.
+      sq: 0.
   lwsloss:
     params:
       beta: 1125.
-  geoloss:
-    params:
+  loss-type: "global" # ["local", "global", "local+global"]
 
 current-dataset: 'kitti'
 channels: [0, 1, 2, 4, 5, 6]  # channesl: x, y, z, remission, nx, ny. nz range

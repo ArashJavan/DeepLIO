@@ -110,7 +110,7 @@ class Trainer(Worker):
         self.logger.print(yaml.dump(self.cfg))
         self.logger.print(self.train_dataset)
         self.logger.print(self.val_dataset)
-
+        self.logger.info(self.criterion)
         self.post_init()
 
     def post_init(self):
@@ -222,34 +222,41 @@ class Trainer(Worker):
                 raise ValueError("imgs:\n{}".format(imgs))
 
             # prepare ground truth tranlational and rotational part
-            gt_f2f_x = gts_f2f[:, :, 0:3]
-            gt_f2f_q = gts_f2f[:, :, 3:]
-            gt_f2g_x = gts_f2g[:, :, 0:3]
+            gt_f2f_t = gts_f2f[:, :, 0:3]
+            gt_f2f_w = gts_f2f[:, :, 3:]
+            gt_f2g_p = gts_f2g[:, :, 0:3]
             gt_f2g_q = gts_f2g[:, :, 3:7]
 
             # compute model predictions and loss
-            pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
-            #pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+            pred_f2f_t, pred_f2f_w = self.model([[imgs, normals], imus])
 
-            if torch.isnan(pred_f2f_x).any() or torch.isinf(pred_f2f_x).any():
-                raise ValueError("pred_f2f_x:\n{}".format(pred_f2f_x))
-            if torch.isnan(pred_f2f_r).any() or torch.isinf(pred_f2f_r).any():
-                raise ValueError("pred_f2f_r:\n{}".format(pred_f2f_r))
+            if torch.isnan(pred_f2f_t).any() or torch.isinf(pred_f2f_t).any():
+                raise ValueError("pred_f2f_x:\n{}".format(pred_f2f_t))
+            if torch.isnan(pred_f2f_w).any() or torch.isinf(pred_f2f_w).any():
+                raise ValueError("pred_f2f_r:\n{}".format(pred_f2f_w))
 
-            pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+            pred_f2g_p, pred_f2g_q = self.se3_to_SE3(pred_f2f_t, pred_f2f_w)
 
-            # gt_f2g_xx, pred_f2g_rr = self.se3_to_SE3(gt_f2f_x, gt_f2f_q)
-            # print(gt_f2g_xx - gt_f2g_x)
-            # print(pred_f2g_rr - gt_f2g_q)
+            # if configured to use only local loss, I do not need global predictions,
+            # so detach it from gradient
+            if self.criterion.loss_Types[0] and not self.criterion.loss_Types[1]:
+                pred_f2g_p = pred_f2g_p.detach()
+                pred_f2g_q = pred_f2g_q.detach()
+            elif not self.criterion.loss_Types[0] and self.criterion.loss_Types[1]:
+                # Loss is calculated only w.r.t. global prediction, so detach locla predictions
+                pred_f2f_t = pred_f2f_t.detach()
+                pred_f2f_w = pred_f2f_w.detach()
+            else:
+                # we need both local and global predictions
+                pass
 
-            loss = self.criterion(pred_f2f_x, pred_f2f_r,
-                                  pred_f2g_x, pred_f2g_r,
-                                  gt_f2f_x, gt_f2f_q,
-                                  gt_f2g_x[:, 0:self.max_glob_seq, :], gt_f2g_q[:, 0:self.max_glob_seq, :])
+            loss = self.criterion(pred_f2f_t, pred_f2f_w,
+                                  pred_f2g_p, pred_f2g_q,
+                                  gt_f2f_t, gt_f2f_w,
+                                  gt_f2g_p[:, 0:self.max_glob_seq, :], gt_f2g_q[:, 0:self.max_glob_seq, :])
 
             # measure accuracy and record loss
             losses.update(loss.detach().item(), self.batch_size*self.seq_size)
-            #pred_disp.update(preds.detach().cpu().numpy(), gts[0].cpu().numpy())
 
             # zero the parameter gradients, compute gradient and optimizer step
             self.optimizer.zero_grad()
@@ -274,9 +281,9 @@ class Trainer(Worker):
 
                 if idx % (5 * self.args.print_freq) == 0:
                     # print some prediction results
-                    x = pred_f2g_x[0, 0:2].detach().cpu().flatten()
-                    q = pred_f2g_r[0, 0:2].detach().cpu().flatten()
-                    x_gt = gt_f2g_x[0:2].detach().cpu().flatten()
+                    x = pred_f2g_p[0, 0:2].detach().cpu().flatten()
+                    q = pred_f2g_q[0, 0:2].detach().cpu().flatten()
+                    x_gt = gt_f2g_p[0:2].detach().cpu().flatten()
                     q_gt = gt_f2g_q[0:2].detach().cpu().flatten()
 
                     self.logger.print("x-hat: [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]"
@@ -373,25 +380,38 @@ class Trainer(Worker):
                     raise ValueError("gt-f2g:\n{}".format(gts_f2g))
 
                 # prepare ground truth tranlational and rotational part
-                gt_f2f_x = gts_f2f[:, :, 0:3]
-                gt_f2f_q = gts_f2f[:, :, 3:]
-                gt_f2g_x = gts_f2g[:, :, 0:3]
+                gt_f2f_t = gts_f2f[:, :, 0:3]
+                gt_f2f_w = gts_f2f[:, :, 3:]
+                gt_f2g_p = gts_f2g[:, :, 0:3]
                 gt_f2g_q = gts_f2g[:, :, 3:7]
 
                 # compute model predictions and loss
-                pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
-                # pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
+                pred_f2f_t, pred_f2f_w = self.model([[imgs, normals], imus])
 
-                if torch.isnan(pred_f2f_x).any() or torch.isinf(pred_f2f_x).any():
-                    raise ValueError("pred_f2f_x:\n{}".format(pred_f2f_x))
-                if torch.isnan(pred_f2f_r).any() or torch.isinf(pred_f2f_r).any():
-                    raise ValueError("pred_f2f_r:\n{}".format(pred_f2f_r))
+                if torch.isnan(pred_f2f_t).any() or torch.isinf(pred_f2f_t).any():
+                    raise ValueError("pred_f2f_x:\n{}".format(pred_f2f_t))
+                if torch.isnan(pred_f2f_w).any() or torch.isinf(pred_f2f_w).any():
+                    raise ValueError("pred_f2f_r:\n{}".format(pred_f2f_w))
 
-                pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
-                loss = self.criterion(pred_f2f_x, pred_f2f_r,
-                                      pred_f2g_x, pred_f2g_r,
-                                      gt_f2f_x, gt_f2f_q,
-                                      gt_f2g_x[:, 0:self.max_glob_seq, :], gt_f2g_q[:, 0:self.max_glob_seq, :])
+                pred_f2g_p, pred_f2g_q = self.se3_to_SE3(pred_f2f_t, pred_f2f_w)
+
+                # if configured to use only local loss, I do not need global predictions,
+                # so detach it from gradient
+                if self.criterion.loss_Types[0] and not self.criterion.loss_Types[1]:
+                    pred_f2g_p = pred_f2g_p.detach()
+                    pred_f2g_q = pred_f2g_q.detach()
+                elif not self.criterion.loss_Types[0] and self.criterion.loss_Types[1]:
+                    # Loss is calculated only w.r.t. global prediction, so detach locla predictions
+                    pred_f2f_t = pred_f2f_t.detach()
+                    pred_f2f_w = pred_f2f_w.detach()
+                else:
+                    # we need both local and global predictions
+                    pass
+
+                loss = self.criterion(pred_f2f_t, pred_f2f_w,
+                                      pred_f2g_p, pred_f2g_q,
+                                      gt_f2f_t, gt_f2f_w,
+                                      gt_f2g_p[:, 0:self.max_glob_seq, :], gt_f2g_q[:, 0:self.max_glob_seq, :])
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), self.batch_size*self.seq_size)
