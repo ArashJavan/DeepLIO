@@ -85,13 +85,13 @@ class BaseBlk(nn.Module):
 
 class Fire(BaseBlk):
     def __init__(self, inplanes, squeeze_planes,
-                 expand1x1_planes, expand3x3_planes, bn=True, bn_d=0.1, init='kaiming', bypass=True):
+                 expand1x1_planes, expand3x3_planes, bn=True, bn_d=0.1, init='kaiming', bypass=None):
         super(Fire, self).__init__(init)
         self.inplanes = inplanes
         self.bypass = bypass
         self.bn = bn
 
-        self.activation = nn.ELU(inplace=True) # nn.ReLU(inplace=True)
+        self.activation = nn.ReLU(inplace=True)
 
         self.squeeze = nn.Conv2d(inplanes, squeeze_planes, kernel_size=1)
         if self.bn:
@@ -105,9 +105,10 @@ class Fire(BaseBlk):
         if self.bn:
             self.expand3x3_bn = nn.BatchNorm2d(expand3x3_planes, momentum=bn_d)
 
-        self.upsample = None
         outplanes = expand1x1_planes + expand3x3_planes
-        if self.bypass and (inplanes != outplanes):
+
+        self.need_upsample = inplanes != outplanes
+        if (self.bypass is not None) and (self.bypass == "complex") and self.need_upsample:
             self.upsample = nn.Conv2d(inplanes, outplanes, kernel_size=1)
 
         self.reset_parameters()
@@ -131,11 +132,13 @@ class Fire(BaseBlk):
 
         out = torch.cat([x_1x1, x_3x3], 1)
 
-        if self.bypass:
-            if self.upsample:
+        if self.bypass is not None:
+            if self.bypass == "complex" and self.need_upsample:
                 identity = self.upsample(identity)
-            out += identity
-            out = F.elu(out, inplace=True)
+                out += identity
+            elif self.bypass == "simple" and not self.need_upsample:
+                out += identity
+            #out = F.elu(out, inplace=True)
         return out
 
 

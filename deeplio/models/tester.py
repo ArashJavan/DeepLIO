@@ -128,23 +128,23 @@ class Tester(Worker):
                     raise ValueError("gt-f2g:\n{}".format(gts_f2g))
 
                 # prepare ground truth tranlational and rotational part
-                gt_f2f_x = gts_f2f[:, :, 0:3]
-                gt_f2f_q = gts_f2f[:, :, 3:]
-                gt_f2g_x = gts_f2g[:, :, 0:3]
+                gt_f2f_t = gts_f2f[:, :, 0:3]
+                gt_f2f_w = gts_f2f[:, :, 3:]
+                gt_f2g_p = gts_f2g[:, :, 0:3]
                 gt_f2g_q = gts_f2g[:, :, 3:7]
 
                 # compute model predictions and loss
-                pred_f2f_x, pred_f2f_r = self.model([[imgs, normals], imus])
+                pred_f2f_t, pred_f2f_w = self.model([[imgs, normals], imus])
                 #pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
-                pred_f2g_x, pred_f2g_r = self.se3_to_SE3(pred_f2f_x, pred_f2f_r)
+                pred_f2g_p, pred_f2g_q = self.se3_to_SE3(pred_f2f_t, pred_f2f_w)
 
-                loss = self.criterion(pred_f2f_x, pred_f2f_r,
-                                      pred_f2g_x, pred_f2g_r,
-                                      gt_f2f_x, gt_f2f_q,
-                                      gt_f2g_x, gt_f2g_q)
+                loss = self.criterion(pred_f2f_t, pred_f2f_w,
+                                      pred_f2g_p, pred_f2g_q,
+                                      gt_f2f_t, gt_f2f_w,
+                                      gt_f2g_p, gt_f2g_q)
 
                 # measure accuracy and record loss
-                losses.update(loss.detach().item(), len(pred_f2f_x))
+                losses.update(loss.detach().item(), len(pred_f2f_t))
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)
@@ -177,30 +177,30 @@ class Tester(Worker):
                 T_glob[:3, 3] = gt_global[1, 0:3]  # t
                 T_glob[:3, :3] = gt_global[1, 3:12].reshape(3, 3) # R
 
-                gt_x = gt_f2f_x.detach().cpu().squeeze()
-                gt_q = gt_f2f_q.detach().cpu().squeeze()
-                pred_f2f_x = pred_f2f_x.detach().cpu().squeeze()
-                pred_f2f_r = pred_f2f_r.detach().cpu().squeeze()
+                gt_x = gt_f2f_t.detach().cpu().squeeze()
+                gt_q = gt_f2f_w.detach().cpu().squeeze()
+                pred_f2f_t = pred_f2f_t.detach().cpu().squeeze()
+                pred_f2f_w = pred_f2f_w.detach().cpu().squeeze()
 
                 if self.has_imu and not np.all(data['valids']):
-                    pred_f2f_x = gt_x
-                    pred_f2f_r = gt_q
+                    pred_f2f_t = gt_x
+                    pred_f2f_w = gt_q
 
                 T_local = np.identity(4)
 
                 # tranlation
-                T_local[:3, 3] = pred_f2f_x.numpy() #  gt_x.numpy()
+                T_local[:3, 3] = pred_f2f_t.numpy() #  gt_x.numpy()
                 #T_local[:3, 3] = gt_x.numpy()
 
                 if self.args.param == 'xq':
-                    T_local[:3, 3] = pred_f2f_x.numpy()
-                    T_local[:3, :3] = SO3.exp(pred_f2f_r).as_matrix().numpy() # spatial.quaternion_to_rotation_matrix(pred_f2f_r).numpy()
+                    T_local[:3, 3] = pred_f2f_t.numpy()
+                    T_local[:3, :3] = SO3.exp(pred_f2f_w).as_matrix().numpy() # spatial.quaternion_to_rotation_matrix(pred_f2f_r).numpy()
                 elif self.args.param == 'x':
-                    T_local[:3, 3] = pred_f2f_x.numpy()
+                    T_local[:3, 3] = pred_f2f_t.numpy()
                     T_local[:3, :3] = SO3.exp(gt_q).as_matrix().numpy() # spatial.quaternion_to_rotation_matrix(gt_q).numpy()
                 elif self.args.param == 'q':
                     T_local[:3, 3] = gt_x.numpy()
-                    T_local[:3, :3] = SO3.exp(pred_f2f_r).as_matrix().numpy()
+                    T_local[:3, :3] = SO3.exp(pred_f2f_w).as_matrix().numpy()
                 else:
                     T_local[:3, 3] = gt_x.numpy()
                     T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
@@ -280,32 +280,39 @@ class OdomSeqRes:
             T_glob_pred.append(T)
             T_0i = np.copy(T)
 
-        self.T_global = np.array(self.T_global)[:, :3, :]
-        self.T_local_pred = np.array(self.T_local_pred)
+        T_global = np.array(self.T_global)
+        q_gt_global = spatial.rotation_matrix_to_quaternion(torch.from_numpy(T_global[:, :3, :3]).contiguous()).numpy()
+        p_gt_global = T_global[:, :3, 3]
+
         T_glob_pred = np.array(T_glob_pred)
+        q_pred_global = spatial.rotation_matrix_to_quaternion(torch.from_numpy(T_glob_pred[:, :3, :3]).contiguous()).numpy()
+        p_pred_global = T_glob_pred[:, :3, 3]
 
-        self.timestamps = np.asarray(self.timestamps).reshape(-1, 1)
-        self.loss = np.asarray(self.loss).reshape(-1, 1)
+        timestamps = np.asarray(self.timestamps).reshape(-1, 1)
+        loss = np.asarray(self.loss).reshape(-1, 1)
 
-        T_glob_pred = T_glob_pred[:, :3, :]
-        res1 = np.hstack((self.timestamps,
-                         T_glob_pred.reshape(len(T_glob_pred), -1),
-                         self.T_global.reshape(len(self.T_global), -1),
-                         self.loss))
+        # save as tum format
+        gt_poses = np.hstack((timestamps, p_gt_global, q_gt_global))
+        fname = "{}/gt_tum_{}_{}.txt".format(self.out_dir, self.date, self.drive)
+        np.savetxt(fname, gt_poses, fmt='%.5f', delimiter=' ')
 
-        fname = "{}/{}_{}.csv".format(self.out_dir, self.date, self.drive)
-        np.savetxt(fname, res1, fmt='%.5f', delimiter=',')
+        pred_poses = np.hstack((timestamps, p_pred_global, q_pred_global))
+        fname = "{}/pred_tum_{}_{}.txt".format(self.out_dir, self.date, self.drive)
+        np.savetxt(fname, pred_poses, fmt='%.5f', delimiter=' ')
 
-        indices = np.arange(len(T_glob_pred))
-        res_metric = T_glob_pred.reshape(len(T_glob_pred), -1)
+        # save as KITTI format
+        gt_poses = T_global[:, :3, :].reshape(len(T_global), -1)
+        fname = "{}/gt_kitti_{}_{}.txt".format(self.out_dir, self.date, self.drive)
+        np.savetxt(fname, gt_poses, fmt='%.5f', delimiter=' ')
 
-        fname = "{}/{}_{}.txt".format(self.out_dir, self.date, self.drive)
-        np.savetxt(fname, res_metric, fmt=['%.6f'] * 12, delimiter=' ')
+        pred_poses = T_glob_pred[:, :3, :].reshape(len(T_glob_pred), -1)
+        fname = "{}/pred_kitti_{}_{}.txt".format(self.out_dir, self.date, self.drive)
+        np.savetxt(fname, pred_poses, fmt='%.5f', delimiter=' ')
 
         fname = "{}/{}_{}.png".format(self.out_dir, self.date, self.drive)
         plt.figure()
-        plt.plot(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.5, linewidth=1, label="GT")
-        plt.scatter(self.T_global[:, 0, 3], self.T_global[:, 1, 3], alpha=0.7, s=0.5)
+        plt.plot(T_global[:, 0, 3], T_global[:, 1, 3], alpha=0.5, linewidth=1, label="GT")
+        plt.scatter(T_global[:, 0, 3], T_global[:, 1, 3], alpha=0.7, s=0.5)
 
         plt.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, linewidth=1, label="DeepLIO")
         plt.scatter(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.7, s=0.5)

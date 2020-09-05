@@ -5,7 +5,7 @@ datasets:
     root-path-sync: "datasets/KITTI/sync"
     root-path-unsync: "datasets/KITTI/extract"
     image-width: 720
-    image-height: 57
+    image-height: 64
     crop-factors: [0, 0] # [0, 4] # top, left
     fov-up: 3.
     fov-down: -25.
@@ -54,14 +54,14 @@ deeplio:
 
 # feature network pointseg
 lidar-feat-pointseg:  # pointseg feature
-  dropout: 0.25
+  dropout: 0.
   classes: ['unknown', 'object']
-  bypass: true
+  bypass: "simple"
   fusion: add # [cat, sub, add]
-  part: "encoder" # [encoder, encoder+decoder]
+  part: "encoder" # [encoder]
 
 lidar-feat-flownet:
-  dropout: 0.25
+  dropout: 0.
   fusion: add # [cat, sub, add]
 
 lidar-feat-resnet:
@@ -78,7 +78,7 @@ lidar-feat-simple-1:
 # IMU Feature Netowrks
 imu-feat-fc:  # FC
   input-size: 6  # !fixed! do not chanage
-  hidden-size: [128, 512, 512, 128]
+  hidden-size: [128, 256, 512, 512, 256, 128]
   dropout: 0.
 
 imu-feat-rnn: # RNN
@@ -87,7 +87,7 @@ imu-feat-rnn: # RNN
   hidden-size: 128
   num-layers: 2
   bidirectional: true
-  dropout: 0.25
+  dropout: 0.
 
 ### Fusion-Layer for DeepLIO Net ###########################
 fusion-layer-cat:
@@ -117,7 +117,7 @@ losses:
     params:
       learn: true
       sx: 0.
-      sq: 0.
+      sq: -3.
   lwsloss:
     params:
       beta: 1125.

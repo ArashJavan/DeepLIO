@@ -28,13 +28,13 @@ class PSEncoder(BaseNet):
             nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=1))  # 1/8
 
         # second block
-        self.fire_blk2 =nn.Sequential(
+        self.fire_blk2 = nn.Sequential(
             Fire(128, 32, 128, 128, bn=True, bn_d=bn_d, bypass=self.bypass),
             Fire(256, 32, 128, 128, bn=True, bn_d=bn_d, bypass=self.bypass),
             SELayer(256, reduction=2),
             nn.MaxPool2d(kernel_size=3, stride=(1, 2), padding=1))  # 1/16
 
-        self.fire_blk3 =nn.Sequential(
+        self.fire_blk3 = nn.Sequential(
             Fire(256, 48, 192, 192, bn=True, bn_d=bn_d, bypass=self.bypass),
             Fire(384, 48, 192, 192, bn=True, bn_d=bn_d, bypass=self.bypass),
             Fire(384, 64, 256, 256, bn=True, bn_d=bn_d, bypass=self.bypass),

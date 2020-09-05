@@ -93,11 +93,7 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         else:
             x = x_feat_0 - x_feat_1
 
-        #x = self.fire12(x)
-        #x = self.avgpool(x)
-        #x = torch.flatten(x, 1)
-
-        #x = F.elu(self.fc1(x), inplace=True) # F.leaky_relu(self.fc1(x), inplace=True, negative_slope=0.01)
+        x = F.elu(self.fc1(x), inplace=True)
 
         if self.p > 0.:
             x = self.drop(x)
