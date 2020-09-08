@@ -93,7 +93,7 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         else:
             x = x_feat_0 - x_feat_1
 
-        x = F.elu(self.fc1(x), inplace=True)
+        x = F.leaky_relu(self.fc1(x), inplace=False)
 
         if self.p > 0.:
             x = self.drop(x)
@@ -116,7 +116,6 @@ class LidarFlowNetFeat(BaseLidarFeatNet):
             self.drop = nn.Dropout(self.p)
 
         self.fc1 = nn.Linear(1024, 128)
-
         self.output_shape = self.calc_output_shape()
 
     def forward(self, x):
@@ -141,7 +140,7 @@ class LidarFlowNetFeat(BaseLidarFeatNet):
         else:
             x = x_feat_0 - x_feat_1
 
-        x = F.elu(self.fc1(x))
+        x = F.leaky_relu(self.fc1(x), inplace=False)
 
         if self.p > 0.:
             x = self.drop(x)
