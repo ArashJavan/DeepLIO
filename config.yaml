@@ -35,19 +35,23 @@ deeplio:
   pretrained: false
   model-path: ""
   lidar-feat-net:
-    name: #"lidar-feat-flownet"
+    name: "lidar-feat-pointseg"
     pretrained: false
     model-path: ""
+    requires-grad: true
   imu-feat-net:
-    name: "imu-feat-fc"
+    name: "imu-feat-rnn"
     pretrained: false
     model-path: ""
+    requires-grad: true
   odom-feat-net:
-    name: #"odom-feat-rnn"
+    name: "odom-feat-rnn"
     pretrained: false
     model-path: ""
+    requires-grad: true
   fusion-net:
     name: "fusion-layer-soft"
+    requires-grad: true   # only soft-fusion has trainable params
 
 ### Lidar Feature Netowrks ###########################
 # feature network simple0 with conv layers
@@ -121,7 +125,7 @@ losses:
   lwsloss:
     params:
       beta: 1125.
-  loss-type: "global" # ["local", "global", "local+global"]
+  loss-type: "local+global" # ["local", "global", "local+global"]
 
 current-dataset: 'kitti'
 channels: [0, 1, 2, 4, 5, 6]  # channesl: x, y, z, remission, nx, ny. nz range
