@@ -117,6 +117,10 @@ def create_lidar_feat_net(input_shape, cfg, arch_cfg, device):
         else:
             load_state_dict(feat_net, model_path)
         feat_net.pretrained = True
+
+    # if configured, disable gradient
+    if not feat_cfg['requires-grad']:
+        disable_grad(feat_net)
     return feat_net
 
 
@@ -146,6 +150,10 @@ def create_imu_feat_net(cfg, arch_cfg, device):
         model_path = feat_cfg['model-path']
         load_state_dict(feat_net, model_path)
         feat_net.pretrained = True
+
+    # if configured, disable gradient
+    if not feat_cfg['requires-grad']:
+        disable_grad(feat_net)
     return feat_net
 
 
@@ -167,6 +175,8 @@ def create_fusion_net(input_shape, cfg, arch_cfg, device):
         feat_net = DeepLIOFusionSoft(input_shape, cfg[feat_name])
     else:
         raise ValueError("Wrong feature network {}".format(feat_name))
+    #TODO enable loading of pretrained model for soft-fusion
+    #TODO enable configurating of requires-grad
     return feat_net
 
 
@@ -196,6 +206,10 @@ def create_odometry_feat_net(input_shape, cfg, arch_cfg, device):
         model_path = feat_cfg['model-path']
         load_state_dict(feat_net, model_path)
         feat_net.pretrained = True
+
+    # if configured, disable gradient
+    if not feat_cfg['requires-grad']:
+        disable_grad(feat_net)
     return feat_net
 
 
@@ -207,5 +221,10 @@ def load_state_dict(module, model_path):
 
     state_dcit = torch.load(model_path, map_location=module.device)
     module.load_state_dict(state_dcit['state_dict'])
+
+
+def disable_grad(module):
+    for param in module.parameters():
+        param.requires_grad = False
 
 
