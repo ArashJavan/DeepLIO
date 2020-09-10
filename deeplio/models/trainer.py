@@ -38,7 +38,7 @@ class Trainer(Worker):
         self.epochs = args.epochs
         self.best_acc = float('inf')
         self.step_val = 0.
-        self.max_glob_seq = 3
+        self.max_glob_seq = 2
 
         # create the folder for saving training checkpoints
         self.checkpoint_dir = self.out_dir
@@ -251,9 +251,9 @@ class Trainer(Worker):
                 pass
 
             loss = self.criterion(pred_f2f_t, pred_f2f_w,
-                                  pred_f2g_p, pred_f2g_q,
+                                  pred_f2g_p[:, 1:self.max_glob_seq+1, :], pred_f2g_q[:, 1:self.max_glob_seq+1, :],
                                   gt_f2f_t, gt_f2f_w,
-                                  gt_f2g_p[:, 0:self.max_glob_seq, :], gt_f2g_q[:, 0:self.max_glob_seq, :])
+                                  gt_f2g_p[:, 1:self.max_glob_seq+1, :], gt_f2g_q[:, 1:self.max_glob_seq+1, :])
 
             # measure accuracy and record loss
             losses.update(loss.detach().item(), self.batch_size*self.seq_size)
@@ -315,7 +315,6 @@ class Trainer(Worker):
 
     def se3_to_SE3(self, f2f_x, f2f_r):
         batch_size, seq_size, _ = f2f_x.shape
-        seq_size = self.max_glob_seq
 
         f2g_q = torch.zeros((batch_size, seq_size, 4), dtype=f2f_x.dtype, device=f2f_x.device)
         f2g_x = torch.zeros((batch_size, seq_size, 3), dtype=f2f_x.dtype, device=f2f_x.device)
@@ -325,7 +324,7 @@ class Trainer(Worker):
             R_prev[:] = torch.eye(3, dtype=f2f_x.dtype, device=f2f_x.device)
             t_prev = torch.zeros((3), dtype=f2f_x.dtype, device=f2f_x.device)
 
-            for s in range(seq_size):
+            for s in range(0, seq_size):
                 t_cur = f2f_x[b, s]
                 #q_cur = spatial.euler_to_rotation_matrix (f2f_r[b, s])
                 w_cur = f2f_r[b, s]
@@ -339,7 +338,6 @@ class Trainer(Worker):
 
                 if not torch.isclose(torch.det(R_prev), torch.FloatTensor([1.]).to(self.device)).all():
                     raise ValueError("Det error:\nR\n{}".format(R_prev))
-
                 f2g_q[b, s] = SO3.from_matrix(R_prev, normalize=True).to_quaternion()
                 f2g_x[b, s] = t_prev
         return f2g_x, f2g_q
@@ -409,9 +407,9 @@ class Trainer(Worker):
                     pass
 
                 loss = self.criterion(pred_f2f_t, pred_f2f_w,
-                                      pred_f2g_p, pred_f2g_q,
+                                      pred_f2g_p[:, 1:self.max_glob_seq + 1, :], pred_f2g_q[:, 1:self.max_glob_seq + 1, :],
                                       gt_f2f_t, gt_f2f_w,
-                                      gt_f2g_p[:, 0:self.max_glob_seq, :], gt_f2g_q[:, 0:self.max_glob_seq, :])
+                                      gt_f2g_p[:, 1:self.max_glob_seq + 1, :], gt_f2g_q[:, 1:self.max_glob_seq + 1, :])
 
                 # measure accuracy and record loss
                 losses.update(loss.detach().item(), self.batch_size*self.seq_size)

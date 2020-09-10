@@ -17,15 +17,17 @@ SEED = 42
 
 
 def set_seed(seed=42):
-    random.seed(seed)
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
+    return
+    #random.seed(seed)
+    #torch.manual_seed(seed)
+    #np.random.seed(seed)
+    #if torch.cuda.is_available():
+    #    torch.cuda.manual_seed(seed)
 
 
 def worker_init_fn(worker_id):
-    set_seed(seed=SEED)
+    return
+    # set_seed(seed=SEED)
 
 
 class Worker:

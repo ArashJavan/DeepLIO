@@ -90,11 +90,12 @@ class Tester(Worker):
         model = self.model
 
         batch_time = AverageMeter('Time', ':6.3f')
+        inference_time = AverageMeter('Inf-Time', ':6.3f')
         losses = AverageMeter('Loss', ':.4e')
         progress = ProgressMeter(
             self.logger,
             len(self.test_dataloader),
-            [batch_time, losses],
+            [batch_time, inference_time, losses],
             prefix='Test: ')
 
         seq_names = []
@@ -134,7 +135,10 @@ class Tester(Worker):
                 gt_f2g_q = gts_f2g[:, :, 3:7]
 
                 # compute model predictions and loss
+                start_inference = time.time()
                 pred_f2f_t, pred_f2f_w = self.model([[imgs, normals], imus])
+                inference_time.update(time.time() - start_inference)
+
                 #pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
                 pred_f2g_p, pred_f2g_q = self.se3_to_SE3(pred_f2f_t, pred_f2f_w)
 
