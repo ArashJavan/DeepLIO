@@ -32,10 +32,10 @@ class Tester(Worker):
 
         args = self.args
 
-        if self.batch_size != 1:
-            self.logger.info("batch size in the testing mode should be set to one.")
-            self.logger.info("setting batch size (batch-size = 1).")
-            self.batch_size = 1
+       # if self.batch_size != 1:
+       #     self.logger.info("batch size in the testing mode should be set to one.")
+       #     self.logger.info("setting batch size (batch-size = 1).")
+       #     self.batch_size = 1
 
         if self.seq_size != 1:
             self.logger.info("setting sequence size (s=1)")
@@ -139,7 +139,6 @@ class Tester(Worker):
                 pred_f2f_t, pred_f2f_w = self.model([[imgs, normals], imus])
                 inference_time.update(time.time() - start_inference)
 
-                #pred_f2f_r = spatial.normalize_quaternion(pred_f2f_r)
                 pred_f2g_p, pred_f2g_q = self.se3_to_SE3(pred_f2f_t, pred_f2f_w)
 
                 loss = self.criterion(pred_f2f_t, pred_f2f_w,
@@ -154,64 +153,62 @@ class Tester(Worker):
                 batch_time.update(time.time() - end)
                 end = time.time()
 
+                batch_size = len(data['metas'])
                 # get meta information for saving the odom. results
-                meta = data['metas'][0]
-                date, drive = meta['date'][0], meta['drive'][0]
-                idx = meta['index'][0]
-                velo_ts = meta['velo-timestamps']
+                for b in range(batch_size):
+                    meta = data['metas'][b]
+                    date, drive = meta['date'][0], meta['drive'][0]
+                    velo_ts = meta['velo-timestamps']
 
-                gt_global = data['gts'][0].cpu().numpy() # gts_global[0].cpu().numpy()
-                seq_name = "{}_{}".format(date, drive)
-                if seq_name not in seq_names:
-                    if last_seq is not None:
-                        last_seq.write_to_file()
+                    gt_global = data['gts'][b].cpu().numpy() # gts_global[0].cpu().numpy()
+                    seq_name = "{}_{}".format(date, drive)
+                    if seq_name not in seq_names:
+                        if last_seq is not None:
+                            last_seq.write_to_file()
 
-                    curr_seq = OdomSeqRes(date, drive, output_dir=self.out_dir)
+                        curr_seq = OdomSeqRes(date, drive, output_dir=self.out_dir)
+                        T_glob = np.identity(4)
+                        T_glob[:3, 3] = gt_global[0, 0:3]  # t
+                        T_glob[:3, :3] = gt_global[0, 3:12].reshape(3, 3) # R
+                        curr_seq.add_local_prediction(velo_ts[0], 0., T_glob, T_glob)
+
+                        # add the file name and file-pointer to the list
+                        seq_names.append(seq_name)
+                        losses.reset()
+
+                    # global ground truth pose
                     T_glob = np.identity(4)
-                    T_glob[:3, 3] = gt_global[0, 0:3]  # t
-                    T_glob[:3, :3] = gt_global[0, 3:12].reshape(3, 3) # R
-                    curr_seq.add_local_prediction(velo_ts[0], 0., T_glob, T_glob)
+                    T_glob[:3, 3] = gt_global[1, 0:3]  # t
+                    T_glob[:3, :3] = gt_global[1, 3:12].reshape(3, 3) # R
 
-                    # add the file name and file-pointer to the list
-                    seq_names.append(seq_name)
-                    losses.reset()
+                    gt_t = gt_f2f_t[b].detach().cpu().squeeze()
+                    gt_w = gt_f2f_w[b].detach().cpu().squeeze()
+                    pred_f2f_t_b = pred_f2f_t[b].detach().cpu().squeeze()
+                    pred_f2f_w_b = pred_f2f_w[b].detach().cpu().squeeze()
 
-                # global ground truth pose
-                T_glob = np.identity(4)
-                T_glob[:3, 3] = gt_global[1, 0:3]  # t
-                T_glob[:3, :3] = gt_global[1, 3:12].reshape(3, 3) # R
+                    if self.has_imu and not np.all(data['valids']):
+                        pred_f2f_t_b = gt_t
+                        pred_f2f_w_b = gt_w
 
-                gt_x = gt_f2f_t.detach().cpu().squeeze()
-                gt_q = gt_f2f_w.detach().cpu().squeeze()
-                pred_f2f_t = pred_f2f_t.detach().cpu().squeeze()
-                pred_f2f_w = pred_f2f_w.detach().cpu().squeeze()
+                    T_local = np.identity(4)
 
-                if self.has_imu and not np.all(data['valids']):
-                    pred_f2f_t = gt_x
-                    pred_f2f_w = gt_q
+                    if self.args.param == 'xq':
+                        T_local[:3, 3] = pred_f2f_t_b.numpy()
+                        T_local[:3, :3] = SO3.exp(pred_f2f_w_b).as_matrix().numpy() # spatial.quaternion_to_rotation_matrix(pred_f2f_r).numpy()
+                    elif self.args.param == 'x':
+                        T_local[:3, 3] = pred_f2f_t_b.numpy()
+                        T_local[:3, :3] = SO3.exp(gt_w).as_matrix().numpy() # spatial.quaternion_to_rotation_matrix(gt_q).numpy()
+                    elif self.args.param == 'q':
+                        T_local[:3, 3] = gt_t.numpy()
+                        T_local[:3, :3] = SO3.exp(pred_f2f_w_b).as_matrix().numpy()
+                    else:
+                        T_local[:3, 3] = gt_t.numpy()
+                        T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_w).numpy()
 
-                T_local = np.identity(4)
+                    curr_seq.add_local_prediction(velo_ts[1], losses.avg, T_local, T_glob)
 
-                # tranlation
-                T_local[:3, 3] = pred_f2f_t.numpy() #  gt_x.numpy()
-                #T_local[:3, 3] = gt_x.numpy()
+                    last_seq = curr_seq
 
-                if self.args.param == 'xq':
-                    T_local[:3, 3] = pred_f2f_t.numpy()
-                    T_local[:3, :3] = SO3.exp(pred_f2f_w).as_matrix().numpy() # spatial.quaternion_to_rotation_matrix(pred_f2f_r).numpy()
-                elif self.args.param == 'x':
-                    T_local[:3, 3] = pred_f2f_t.numpy()
-                    T_local[:3, :3] = SO3.exp(gt_q).as_matrix().numpy() # spatial.quaternion_to_rotation_matrix(gt_q).numpy()
-                elif self.args.param == 'q':
-                    T_local[:3, 3] = gt_x.numpy()
-                    T_local[:3, :3] = SO3.exp(pred_f2f_w).as_matrix().numpy()
-                else:
-                    T_local[:3, 3] = gt_x.numpy()
-                    T_local[:3, :3] = spatial.quaternion_to_rotation_matrix(gt_q).numpy()
-
-                curr_seq.add_local_prediction(velo_ts[1], losses.avg, T_local, T_glob)
-
-                last_seq = curr_seq
                 if idx % self.args.print_freq == 0:
                     progress.display(idx)
                     # update tensorboard
@@ -285,24 +282,24 @@ class OdomSeqRes:
             T_0i = np.copy(T)
 
         T_global = np.array(self.T_global)
-        q_gt_global = spatial.rotation_matrix_to_quaternion(torch.from_numpy(T_global[:, :3, :3]).contiguous()).numpy()
-        p_gt_global = T_global[:, :3, 3]
+        #q_gt_global = spatial.rotation_matrix_to_quaternion(torch.from_numpy(T_global[:, :3, :3]).contiguous()).numpy()
+        #p_gt_global = T_global[:, :3, 3]
 
         T_glob_pred = np.array(T_glob_pred)
-        q_pred_global = spatial.rotation_matrix_to_quaternion(torch.from_numpy(T_glob_pred[:, :3, :3]).contiguous()).numpy()
-        p_pred_global = T_glob_pred[:, :3, 3]
+        #q_pred_global = spatial.rotation_matrix_to_quaternion(torch.from_numpy(T_glob_pred[:, :3, :3]).contiguous()).numpy()
+        #p_pred_global = T_glob_pred[:, :3, 3]
 
         timestamps = np.asarray(self.timestamps).reshape(-1, 1)
         loss = np.asarray(self.loss).reshape(-1, 1)
 
         # save as tum format
-        gt_poses = np.hstack((timestamps, p_gt_global, q_gt_global))
-        fname = "{}/gt_tum_{}_{}.txt".format(self.out_dir, self.date, self.drive)
-        np.savetxt(fname, gt_poses, fmt='%.5f', delimiter=' ')
+        #gt_poses = np.hstack((timestamps, p_gt_global, q_gt_global))
+        #fname = "{}/gt_tum_{}_{}.txt".format(self.out_dir, self.date, self.drive)
+        #np.savetxt(fname, gt_poses, fmt='%.5f', delimiter=' ')
 
-        pred_poses = np.hstack((timestamps, p_pred_global, q_pred_global))
-        fname = "{}/pred_tum_{}_{}.txt".format(self.out_dir, self.date, self.drive)
-        np.savetxt(fname, pred_poses, fmt='%.5f', delimiter=' ')
+        #pred_poses = np.hstack((timestamps, p_pred_global, q_pred_global))
+        #fname = "{}/pred_tum_{}_{}.txt".format(self.out_dir, self.date, self.drive)
+        #np.savetxt(fname, pred_poses, fmt='%.5f', delimiter=' ')
 
         # save as KITTI format
         gt_poses = T_global[:, :3, :].reshape(len(T_global), -1)
@@ -326,8 +323,3 @@ class OdomSeqRes:
         plt.grid()
         plt.legend()
         plt.savefig(fname, figsize=(50, 50), dpi=600)
-
-
-
-
-
