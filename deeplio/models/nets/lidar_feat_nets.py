@@ -63,8 +63,6 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         #self.fire12 = nn.Sequential(Fire(768, 96, 384, 384, bn=True, bn_d=self.bn_d, bypass=False),
         #                            Fire(768, 96, 384, 384, bn=True, bn_d=self.bn_d, bypass=False))
 
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-
         self.fc1 = nn.Linear(768, 128)
 
         if self.p > 0.:

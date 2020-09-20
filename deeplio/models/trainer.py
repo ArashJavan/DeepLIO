@@ -16,7 +16,7 @@ from liegroups.torch import SO3
 
 from deeplio import datasets as ds
 from deeplio.common import spatial, utils
-from deeplio.losses import get_loss_function
+from deeplio.losses import get_loss_function, HWSLoss, LWSLoss
 from deeplio.models import nets
 from deeplio.models.misc import DataCombiCreater, PolynomialLRDecay
 from .optimizer import create_optimizer
@@ -55,8 +55,8 @@ class Trainer(Worker):
         self.optimizer = create_optimizer([{'params': self.model.parameters()},
                                            {'params': self.criterion.parameters()}]
                                           , self.cfg, args)
-        self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=self.epochs, end_learning_rate=0.00005,
-                                              power=1.0)
+        self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=self.epochs, end_learning_rate=0.00001,
+                                              power=2.0)
 
         self.has_lidar = True if self.model.lidar_feat_net is not None else False
         self.has_imu = True if self.model.imu_feat_net is not None else False
@@ -89,22 +89,24 @@ class Trainer(Worker):
 
         # optionally resume from a checkpoint
         if args.resume or args.evaluate:
-            model_cfg = self.cfg[self.cfg['arch']]
+            model_cfg = self.cfg['deeplio']
             pretrained = self.model.pretrained
             if not pretrained:
                 self.logger.error("no model checkpoint loaded!")
                 raise ValueError("no model checkpoint loaded!")
 
             ckp_path = model_cfg['model-path']
-            if not os.path.isfile(args.resume):
+            if not os.path.isfile(ckp_path):
                 self.logger.error("no checkpoint found at '{}'".format(ckp_path))
                 raise ValueError("no checkpoint found at '{}'".format(ckp_path))
 
             self.logger.info("loading from checkpoint '{}'".format(ckp_path))
             checkpoint = torch.load(ckp_path, map_location=self.device)
-            self.start_epoch = checkpoint['epoch']
+            self.start_epoch = checkpoint['epoch'] + 1
             self.best_acc = checkpoint['best_acc']
             self.optimizer.load_state_dict(checkpoint['optimizer'])
+            if isinstance(self.criterion, HWSLoss):
+                self.criterion.load_state_dict(checkpoint['criterion'])
             self.logger.info("loaded checkpoint '{}' (epoch {})".format(ckp_path, checkpoint['epoch']))
 
         self.logger.print(yaml.dump(self.cfg))
@@ -262,13 +264,13 @@ class Trainer(Worker):
             self.optimizer.zero_grad()
             loss.backward()
 
-            param_means = torch.FloatTensor([param.mean().detach() for param in self.model.parameters() if param is not None])
-            if torch.isnan(param_means).any():
-                raise ValueError("param_means:\n{}".format(param_means))
+            #param_means = torch.FloatTensor([param.mean().detach() for param in self.model.parameters() if param is not None])
+            #if torch.isnan(param_means).any():
+            #    raise ValueError("param_means:\n{}".format(param_means))
 
-            param_grad_means = torch.FloatTensor([param.grad.mean().detach() for param in self.model.parameters() if param.grad is not None])
-            if torch.isnan(param_grad_means).any():
-                raise ValueError("param_grad_means:\n{}".format(param_grad_means))
+            #param_grad_means = torch.FloatTensor([param.grad.mean().detach() for param in self.model.parameters() if param.grad is not None])
+            #if torch.isnan(param_grad_means).any():
+            #    raise ValueError("param_grad_means:\n{}".format(param_grad_means))
 
             #torch.nn.utils.clip_grad_norm_(self.model.parameters(), 20.)
             self.optimizer.step()
@@ -281,20 +283,21 @@ class Trainer(Worker):
 
                 if idx % (5 * self.args.print_freq) == 0:
                     # print some prediction results
-                    x = pred_f2g_p[0, 0:2].detach().cpu().flatten()
-                    q = pred_f2g_q[0, 0:2].detach().cpu().flatten()
-                    x_gt = gt_f2g_p[0:2].detach().cpu().flatten()
-                    q_gt = gt_f2g_q[0:2].detach().cpu().flatten()
+                    x = pred_f2g_p[0, 0:3].detach().cpu().flatten()
+                    q = pred_f2g_q[0, 0:3].detach().cpu().flatten()
+                    x_gt = gt_f2g_p[0:3].detach().cpu().flatten()
+                    q_gt = gt_f2g_q[0:3].detach().cpu().flatten()
 
-                    self.logger.print("x-hat: [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]"
-                                      "\nx-gt:  [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]".
-                                      format(x[0], x[1], x[2], x[3], x[4], x[5],
-                                             x_gt[0], x_gt[2], x_gt[2], x_gt[3], x_gt[4], x_gt[5]))
+                    self.logger.print("x-hat: [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]"
+                                      "\nx-gt:  [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f}]".
+                                      format(x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[8],
+                                             x_gt[0], x_gt[2], x_gt[2], x_gt[3], x_gt[4], x_gt[5], x_gt[6], x_gt[7], x_gt[8]))
 
-                    self.logger.print("q-hat: [{:.4f},{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f},{:.4f}]"
-                                      "\nq-gt:  [{:.4f},{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f},{:.4f}]".
-                                      format(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7],
-                                             q_gt[0], q_gt[1], q_gt[2], q_gt[3], q_gt[4], q_gt[5], q_gt[6], q_gt[7]))
+                    self.logger.print("q-hat: [{:.4f},{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f},{:.4f}]"
+                                      "\nq-gt:  [{:.4f},{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f},{:.4f}], [{:.4f},{:.4f},{:.4f},{:.4f}]".
+                                      format(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], q[8], q[9], q[10], q[11],
+                                             q_gt[0], q_gt[1], q_gt[2], q_gt[3], q_gt[4], q_gt[5], q_gt[6], q_gt[7],
+                                             q_gt[8], q_gt[9], q_gt[10], q_gt[11]))
 
                 progress.display(idx)
                 grad_norm = calc_grad_norm(self.model.parameters())

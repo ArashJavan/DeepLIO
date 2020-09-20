@@ -47,8 +47,8 @@ if __name__ == '__main__':
                         dest='weight_decay')
     parser.add_argument('-p', '--print-freq', default=10, type=int,
                         metavar='N', help='print frequency (default: 10)')
-    parser.add_argument('--resume', default='', type=str, metavar='PATH',
-                        help='path to latest checkpoint (default: none)')
+    parser.add_argument('--resume', default=False, action='store_true', dest='resume',
+                        help='resume training')
     parser.add_argument('-e', '--evaluate', default='', type=str,  metavar='PATH',
                         help='evaluate model with given checkpoint on validation set (default: none)')
     parser.add_argument('-c', '--config', default="./config.yaml", help='Path to configuration file')
