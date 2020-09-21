@@ -79,7 +79,7 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         imgs_xyz, imgs_normals = x[0], x[1]
         b, s, t, c, h, w = imgs_xyz.shape
         imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
-        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
+        imgs_normals = imgs_normals.reshape(b * s, t * c, h, w)
 
         x_feat_0 = F.adaptive_avg_pool2d(self.encoder1(imgs_xyz), (1, 1)).flatten(1)
         x_feat_1 = F.adaptive_avg_pool2d(self.encoder2(imgs_normals), (1, 1)).flatten(1)

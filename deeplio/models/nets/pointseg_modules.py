@@ -91,7 +91,7 @@ class Fire(BaseBlk):
         self.bypass = bypass
         self.bn = bn
 
-        self.activation = nn.ReLU(inplace=True)
+        self.activation = nn.ReLU(inplace=False)
 
         self.squeeze = nn.Conv2d(inplanes, squeeze_planes, kernel_size=1)
         if self.bn:
