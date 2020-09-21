@@ -63,7 +63,7 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         #self.fire12 = nn.Sequential(Fire(768, 96, 384, 384, bn=True, bn_d=self.bn_d, bypass=False),
         #                            Fire(768, 96, 384, 384, bn=True, bn_d=self.bn_d, bypass=False))
 
-        self.fc1 = nn.Linear(768, 128)
+        #self.fc1 = nn.Linear(768, 128)
 
         if self.p > 0.:
             self.drop = nn.Dropout(self.p)
@@ -91,7 +91,7 @@ class LidarPointSegFeat(BaseLidarFeatNet):
         else:
             x = x_feat_0 - x_feat_1
 
-        x = F.leaky_relu(self.fc1(x), inplace=False)
+        #x = F.leaky_relu(self.fc1(x), inplace=False)
 
         if self.p > 0.:
             x = self.drop(x)
