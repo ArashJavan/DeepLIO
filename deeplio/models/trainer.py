@@ -198,8 +198,8 @@ class Trainer(Worker):
             if self.data_last is None:
                 self.data_last = data
 
-            if self.has_imu and not np.alltrue(data['valids']):
-                continue
+            #if self.has_imu and not np.alltrue(data['valids']):
+            #    continue
 
             # measure data loading time
             data_time.update(time.time() - end)
