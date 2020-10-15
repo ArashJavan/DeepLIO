@@ -126,7 +126,7 @@ class LidarFlowNetFeat(BaseLidarFeatNet):
 
         b, s, t, c, h, w = imgs_xyz.shape
         imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
-        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
+        imgs_normals = imgs_normals.reshape(b * s, t * c, h, w)
 
         x_feat_0 = self.encoder1(imgs_xyz)
         x_feat_1 = self.encoder2(imgs_normals)
@@ -138,7 +138,7 @@ class LidarFlowNetFeat(BaseLidarFeatNet):
         else:
             x = x_feat_0 - x_feat_1
 
-        x = F.leaky_relu(self.fc1(x), inplace=False)
+        x = F.relu(self.fc1(x), inplace=False)
 
         if self.p > 0.:
             x = self.drop(x)
@@ -167,7 +167,7 @@ class LidarResNetFeat(BaseLidarFeatNet):
 
         b, s, t, c, h, w = imgs_xyz.shape
         imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
-        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
+        imgs_normals = imgs_normals.reshape(b * s, t * c, h, w)
 
         x_feat_0 = self.encoder1(imgs_xyz)
         x_feat_1 = self.encoder2(imgs_normals)
@@ -182,7 +182,7 @@ class LidarResNetFeat(BaseLidarFeatNet):
         if self.p > 0.:
             x = self.drop(x)
 
-        x = F.leaky_relu(self.fc1(x))
+        x = F.relu(self.fc1(x))
 
         # reshape output to BxTxCxHxW
         x = x.view(b, s, num_flat_features(x, 1))
@@ -215,7 +215,7 @@ class LidarSimpleFeat1(BaseLidarFeatNet):
 
         b, s, t, c, h, w = imgs_xyz.shape
         imgs_xyz = imgs_xyz.reshape(b * s, t * c, h, w)
-        imgs_normals = imgs_xyz.reshape(b * s, t * c, h, w)
+        imgs_normals = imgs_normals.reshape(b * s, t * c, h, w)
 
         x_feat_0 = self.encoder1(imgs_xyz)
         x_feat_1 = self.encoder2(imgs_normals)

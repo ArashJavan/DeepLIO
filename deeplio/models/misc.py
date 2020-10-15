@@ -137,21 +137,23 @@ class PolynomialLRDecay(_LRScheduler):
         end_learning_rate: scheduler stoping learning rate decay, value of learning rate must be this value
         power: The power of the polynomial.
     """
-    def __init__(self, optimizer, max_decay_steps, end_learning_rate=0.0001, power=1.0):
+    def __init__(self, optimizer, max_decay_steps, end_learning_rate=0.0001, power=1.0, last_epoch=-1):
         if max_decay_steps <= 1.:
             raise ValueError('max_decay_steps should be greater than 1.')
         self.max_decay_steps = max_decay_steps
         self.end_learning_rate = end_learning_rate
         self.power = power
-        super().__init__(optimizer)
+        super().__init__(optimizer, last_epoch=last_epoch)
 
     def get_lr(self):
         if self.last_epoch > self.max_decay_steps:
             return [self.end_learning_rate for _ in self.base_lrs]
 
-        return [(base_lr - self.end_learning_rate) *
-                ((1 - self.last_epoch / self.max_decay_steps) ** (self.power)) +
-                self.end_learning_rate for base_lr in self.base_lrs]
+        lr = [(base_lr - self.end_learning_rate) *
+              ((1 - self.last_epoch / self.max_decay_steps) ** (self.power)) +
+              self.end_learning_rate for base_lr in self.base_lrs]
+
+        return lr
 
     def _get_closed_form_lr(self):
         if self.last_epoch > self.max_decay_steps:

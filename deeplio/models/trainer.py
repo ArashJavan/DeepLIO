@@ -35,6 +35,7 @@ class Trainer(Worker):
         args = self.args
 
         self.start_epoch = args.start_epoch
+        self.last_epoch = self.start_epoch
         self.epochs = args.epochs
         self.best_acc = float('inf')
         self.step_val = 0.
@@ -55,8 +56,6 @@ class Trainer(Worker):
         self.optimizer = create_optimizer([{'params': self.model.parameters()},
                                            {'params': self.criterion.parameters()}]
                                           , self.cfg, args)
-        self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=self.epochs, end_learning_rate=0.00001,
-                                              power=2.0)
 
         self.has_lidar = True if self.model.lidar_feat_net is not None else False
         self.has_imu = True if self.model.imu_feat_net is not None else False
@@ -88,6 +87,7 @@ class Trainer(Worker):
                           format(self.args))
 
         # optionally resume from a checkpoint
+        last_epoch = -1
         if args.resume or args.evaluate:
             model_cfg = self.cfg['deeplio']
             pretrained = self.model.pretrained
@@ -103,11 +103,16 @@ class Trainer(Worker):
             self.logger.info("loading from checkpoint '{}'".format(ckp_path))
             checkpoint = torch.load(ckp_path, map_location=self.device)
             self.start_epoch = checkpoint['epoch'] + 1
+            last_epoch = checkpoint['epoch']
             self.best_acc = checkpoint['best_acc']
             self.optimizer.load_state_dict(checkpoint['optimizer'])
             if isinstance(self.criterion, HWSLoss):
                 self.criterion.load_state_dict(checkpoint['criterion'])
             self.logger.info("loaded checkpoint '{}' (epoch {})".format(ckp_path, checkpoint['epoch']))
+
+        self.lr_scheduler = PolynomialLRDecay(self.optimizer, max_decay_steps=self.epochs, end_learning_rate=0.000001,
+                                              power=2.0, last_epoch=last_epoch)
+        #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=3, gamma=0.7, last_epoch=-1)
 
         self.logger.print(yaml.dump(self.cfg))
         self.logger.print(self.train_dataset)

@@ -61,11 +61,11 @@ def conv( batch_norm, in_planes, out_planes, kernel_size=(3, 3), stride=1):
             nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=(padding_h, padding_w),
                       bias=False),
             nn.BatchNorm2d(out_planes),
-            nn.LeakyReLU(0.1, inplace=True)
+            nn.ReLU()
         )
     else:
         return nn.Sequential(
             nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=(padding_h, padding_w),
                       bias=True),
-            nn.LeakyReLU(0.1, inplace=True)
+            nn.ReLU()
         )

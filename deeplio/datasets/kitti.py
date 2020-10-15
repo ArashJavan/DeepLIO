@@ -358,7 +358,7 @@ class Kitti(data.Dataset):
         else:
             imgs_normalized = [torch.from_numpy(img.transpose(2, 0, 1)) for img in self.images]
         imgs_normalized = torch.stack(imgs_normalized)
-        imgs_normalized.sub_(mean[None, :, None, None]).div_(std[None, :, None, None])
+        imgs_normalized.sub_(mean[None, :, None, None])
         imgs_normalized = imgs_normalized[:, self.channels]
 
         return imgs_org, imgs_normalized

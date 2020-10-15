@@ -186,9 +186,9 @@ class Tester(Worker):
                     pred_f2f_t_b = pred_f2f_t[b].detach().cpu().squeeze()
                     pred_f2f_w_b = pred_f2f_w[b].detach().cpu().squeeze()
 
-                    if self.has_imu and not np.all(data['valids']):
-                        pred_f2f_t_b = gt_t
-                        pred_f2f_w_b = gt_w
+                    #if self.has_imu and not np.all(data['valids']):
+                    #    pred_f2f_t_b = gt_t
+                    #    pred_f2f_w_b = gt_w
 
                     T_local = np.identity(4)
 
@@ -312,14 +312,15 @@ class OdomSeqRes:
 
         fname = "{}/{}_{}.png".format(self.out_dir, self.date, self.drive)
         plt.figure()
-        plt.plot(T_global[:, 0, 3], T_global[:, 1, 3], alpha=0.5, linewidth=1, label="GT")
-        plt.scatter(T_global[:, 0, 3], T_global[:, 1, 3], alpha=0.7, s=0.5)
+        plt.plot(T_global[:, 0, 3], T_global[:, 1, 3], alpha=0.75, linewidth=1, label="GT")
+        #plt.scatter(T_global[:, 0, 3], T_global[:, 1, 3], alpha=0.7, s=0.5)
 
-        plt.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.5, linewidth=1, label="DeepLIO")
-        plt.scatter(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.7, s=0.5)
+        plt.plot(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.75, linewidth=1, label="DeepLIO")
+        #plt.scatter(T_glob_pred[:, 0, 3], T_glob_pred[:, 1, 3], alpha=0.7, s=0.5)
 
         plt.xlabel('x [m]')
         plt.ylabel('y [m]')
         plt.grid()
         plt.legend()
         plt.savefig(fname, figsize=(50, 50), dpi=600)
+        plt.close()
