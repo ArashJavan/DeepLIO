@@ -48,6 +48,8 @@ class DeepLIOFusionSoft(BaseNet):
         self.seq_size = self.cfg_container.seq_size
         self.combinations = self.cfg_container.combinations
         self.input_shapes = input_shapes
+        self.s1_feat = None
+        self.s2_feat = None
 
         sum_in_channels = sum([in_shape[-1] for in_shape in self.input_shapes])
 
@@ -64,11 +66,11 @@ class DeepLIOFusionSoft(BaseNet):
         imu_feat = x[1]
 
         cat_feat = torch.cat((lidar_feat, imu_feat), dim=2)
-        s1_feat = torch.sigmoid(self.layers[0](cat_feat))
-        s2_feat = torch.sigmoid(self.layers[1](cat_feat))
+        self.s1_feat = torch.sigmoid(self.layers[0](cat_feat))
+        self.s2_feat = torch.sigmoid(self.layers[1](cat_feat))
 
-        lidar_feat *= s1_feat
-        imu_feat *= s2_feat
+        lidar_feat *= self.s1_feat
+        imu_feat *= self.s2_feat
         out = torch.cat((lidar_feat, imu_feat), dim=2)
         return out
 
