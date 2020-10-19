@@ -3,10 +3,11 @@ import time
 import yaml
 from pathlib import Path
 
-import matplotlib
 import numpy as np
-import yaml
 
+import cv2 as cv
+
+import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
@@ -32,10 +33,10 @@ class Tester(Worker):
 
         args = self.args
 
-       # if self.batch_size != 1:
-       #     self.logger.info("batch size in the testing mode should be set to one.")
-       #     self.logger.info("setting batch size (batch-size = 1).")
-       #     self.batch_size = 1
+        if self.batch_size != 1:
+            self.logger.info("batch size in the testing mode should be set to one.")
+            self.logger.info("setting batch size (batch-size = 1).")
+            self.batch_size = 1
 
         if self.seq_size != 1:
             self.logger.info("setting sequence size (s=1)")
@@ -68,6 +69,30 @@ class Tester(Worker):
                                               device=self.device)
 
         self.tensor_writer = tensorboard.SummaryWriter(log_dir=self.runs_dir)
+
+        # setting lidar encoder1 hooks
+        self.counter = 0
+
+        self.hooks_lidar_enc1 = {}
+        self.model.lidar_feat_net.encoder1.conv1a.register_forward_hook(
+            self.get_activation('conv1a', self.hooks_lidar_enc1))
+
+        self.model.lidar_feat_net.encoder1.fire_blk1.register_forward_hook(
+            self.get_activation('fire_blk1', self.hooks_lidar_enc1))
+
+        self.model.lidar_feat_net.encoder1.fire_blk2.register_forward_hook(
+            self.get_activation('fire_blk2', self.hooks_lidar_enc1))
+
+        # setting lidar encoder2 hooks
+        self.hooks_lidar_enc2 = {}
+        self.model.lidar_feat_net.encoder2.conv1a.register_forward_hook(
+            self.get_activation('conv1a', self.hooks_lidar_enc2))
+
+        self.model.lidar_feat_net.encoder2.fire_blk1.register_forward_hook(
+            self.get_activation('fire_blk1', self.hooks_lidar_enc2))
+
+        self.model.lidar_feat_net.encoder2.fire_blk2.register_forward_hook(
+            self.get_activation('fire_blk2', self.hooks_lidar_enc2))
 
         # debugging and visualizing
         self.logger.print("System Training Configurations:")
@@ -152,6 +177,8 @@ class Tester(Worker):
                 # measure elapsed time
                 batch_time.update(time.time() - end)
                 end = time.time()
+
+                self.process_hooks()
 
                 batch_size = len(data['metas'])
                 # get meta information for saving the odom. results
@@ -250,6 +277,124 @@ class Tester(Worker):
                 f2g_x[b, s] = t_prev
         return f2g_x, f2g_q
 
+
+    def process_hooks(self):
+
+        self.counter += 1
+
+        #if self.counter % 5 != 0:
+        #    return
+
+        ### Enocder1
+        # plotting input
+        fig, axes = plt.subplots(figsize=(8, 2))
+        im_xyz = self.hooks_lidar_enc1['conv1a'][0][0, 0:3, :, :]
+        im = np.linalg.norm(im_xyz, axis=0)
+        im = (im - im.min()) / (im.max() - im.min())
+        im = np.log(2*im + 1)
+        im = cv.resize(im, None, fx=1, fy=2, interpolation=cv.INTER_CUBIC)
+        pos = axes.imshow(im, cmap="jet")
+        axes.set_title("Input vertexmap image", fontsize=10)
+        fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
+        fig.tight_layout()
+        fig.savefig("{}/enc1_vertexmap_{}.png".format(self.out_dir, self.counter), dpi=800)
+        plt.close(fig)
+
+        # plotting conv1a
+        fig, axes = plt.subplots(figsize=(8, 2))
+        im = np.mean(self.hooks_lidar_enc1['conv1a'][1][0], axis=0) # self.hooks_lidar_enc1['conv1a'][1][0, -1, :, :]
+        im = (im - im.min()) / (im.max() - im.min())
+        pos = axes.imshow(im**2, cmap="jet")
+        axes.set_title("Output feature map conv1", fontsize=10)
+        fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
+        fig.tight_layout()
+        fig.savefig("{}/enc1_connv1a_{}.png".format(self.out_dir, self.counter), dpi=800)
+        plt.close(fig)
+
+        # plotting fire1
+        fig, axes = plt.subplots(figsize=(8, 2))
+        im = np.mean(self.hooks_lidar_enc1['fire_blk1'][1][0], axis=0) # self.hooks_lidar_enc1['fire_blk1'][1][0, -1, :, :]
+        im = (im - im.min()) / (im.max() - im.min())
+        im = cv.resize(im, None, fx=2.6, fy=0.65, interpolation=cv.INTER_CUBIC)
+        pos = axes.imshow(im, cmap="jet")
+        axes.set_title("Output feature map fire1", fontsize=10)
+        fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
+        fig.tight_layout()
+        fig.savefig("{}/enc1_fire1_{}.png".format(self.out_dir, self.counter), dpi=800)
+        plt.close(fig)
+
+        ### Enocder2
+        # plotting input
+        fig, axes = plt.subplots(figsize=(8, 2))
+        im = self.hooks_lidar_enc2['conv1a'][0][0, 0:3, :, :].transpose(1, 2, 0)
+        #im = np.linalg.norm(im_xyz, axis=0)
+        #im = (im - im.min()) / (im.max() - im.min())
+        #im = np.log(2*im + 1)
+        im = cv.resize(im, None, fx=1, fy=2, interpolation=cv.INTER_CUBIC)
+        im = (im - im.min()) / (im.max() - im.min())
+        pos = axes.imshow(im, cmap="hsv")
+        axes.set_title("Input normalmap image", fontsize=10)
+        #fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
+        fig.tight_layout()
+        fig.savefig("{}/enc2_normalmap_{}.png".format(self.out_dir, self.counter), dpi=800)
+        plt.close(fig)
+
+        # plotting conv1a
+        fig, axes = plt.subplots(figsize=(8, 2))
+        im = np.mean(self.hooks_lidar_enc2['conv1a'][1][0], axis=0) # self.hooks_lidar_enc1['conv1a'][1][0, -1, :, :]
+        im = (im - im.min()) / (im.max() - im.min())
+        pos = axes.imshow(im, cmap="jet")
+        axes.set_title("Output feature map conv1", fontsize=10)
+        fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
+        fig.tight_layout()
+        fig.savefig("{}/enc2_connv1a_{}.png".format(self.out_dir, self.counter), dpi=800)
+        plt.close(fig)
+
+        # plotting fire1
+        fig, axes = plt.subplots(figsize=(8, 2))
+        im = np.mean(self.hooks_lidar_enc2['fire_blk1'][1][0], axis=0) # self.hooks_lidar_enc1['fire_blk1'][1][0, -1, :, :]
+        im = (im - im.min()) / (im.max() - im.min())
+        im = cv.resize(im, None, fx=2.6, fy=0.65, interpolation=cv.INTER_CUBIC)
+        pos = axes.imshow(im, cmap="jet")
+        axes.set_title("Output feature map fire1", fontsize=10)
+        fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
+        fig.tight_layout()
+        fig.savefig("{}/enc2_fire1_{}.png".format(self.out_dir, self.counter), dpi=800)
+        plt.close(fig)
+
+        # plotting fusion weights
+        fig, axes = plt.subplots(2, 2, figsize=(8, 3))
+
+        im_xyz = self.hooks_lidar_enc1['conv1a'][0][0, 0:3, :, :]
+        im = np.linalg.norm(im_xyz, axis=0)
+        im = (im - im.min()) / (im.max() - im.min())
+        im = np.log(2*im + 1)
+        axes[0, 0].imshow(im, cmap="gist_rainbow", vmin=0, vmax=1)
+        axes[0, 0].set_title("Input image t0", fontsize=10)
+
+        im_xyz = self.hooks_lidar_enc1['conv1a'][0][0, 3:, :, :]
+        im = np.linalg.norm(im_xyz, axis=0)
+        im = (im - im.min()) / (im.max() - im.min())
+        im = np.log(2*im + 1)
+        axes[0, 1].imshow(im, cmap="gist_rainbow", vmin=0, vmax=1)
+        axes[0, 1].set_title("Input image t1", fontsize=10)
+
+        axes[1, 0].hist(self.model.fusion_net.s1_feat.flatten().detach().cpu().numpy(), bins=100, density=True, facecolor='g', alpha=0.75)
+        axes[1, 0].set_title("Lidar-Feature-Net fusion weights", fontsize=10)
+        axes[1, 0].grid(True)
+
+        axes[1, 1].hist(self.model.fusion_net.s2_feat.flatten().detach().cpu().numpy(), bins=100, density=True, facecolor='g', alpha=0.75)
+        axes[1, 1].set_title("IMU-Feature-Net fusion weights", fontsize=10)
+        axes[1, 1].grid(True)
+
+        fig.tight_layout()
+        fig.savefig("{}/fusion_weights_{}.png".format(self.out_dir, self.counter).format(self.counter), dpi=400)
+        plt.close(fig)
+
+    def get_activation(self, name, hooks):
+        def hook(model, input, ouput):
+            hooks[name] = [input[0].detach().cpu().numpy(), ouput.detach().cpu().numpy()]
+        return hook
 
 class TesterDeepLIO(Tester):
     ACTION = "test_deeplio"
