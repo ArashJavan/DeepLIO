@@ -1,5 +1,5 @@
 import time
-
+import io
 import yaml
 from pathlib import Path
 
@@ -178,7 +178,7 @@ class Tester(Worker):
                 batch_time.update(time.time() - end)
                 end = time.time()
 
-                self.process_hooks()
+                self.process_hooks(data)
 
                 batch_size = len(data['metas'])
                 # get meta information for saving the odom. results
@@ -278,22 +278,59 @@ class Tester(Worker):
         return f2g_x, f2g_q
 
 
-    def process_hooks(self):
+    def process_hooks(self, data):
 
         self.counter += 1
 
         #if self.counter % 5 != 0:
         #    return
+        enc_1_ims = []
+        enc_2_ims = []
 
-        ### Enocder1
-        # plotting input
-        fig, axes = plt.subplots(figsize=(8, 2))
+        #### Encoder 1
+        # input vertexmap
         im_xyz = self.hooks_lidar_enc1['conv1a'][0][0, 0:3, :, :]
         im = np.linalg.norm(im_xyz, axis=0)
         im = (im - im.min()) / (im.max() - im.min())
         im = np.log(2*im + 1)
-        im = cv.resize(im, None, fx=1, fy=2, interpolation=cv.INTER_CUBIC)
-        pos = axes.imshow(im, cmap="jet")
+        im_enc1_in = cv.resize(im, None, fx=1, fy=2, interpolation=cv.INTER_LINEAR)
+        enc_1_ims.append(im_enc1_in)
+
+        # Conv1
+        im = np.mean(self.hooks_lidar_enc1['conv1a'][1][0], axis=0) # self.hooks_lidar_enc1['conv1a'][1][0, -1, :, :]
+        im = (im - im.min()) / (im.max() - im.min())
+        im_enc1_conv1 = cv.resize(im, None, fx=2, fy=2, interpolation=cv.INTER_LINEAR)
+        enc_1_ims.append(im_enc1_conv1)
+
+        # fire1
+        im = np.mean(self.hooks_lidar_enc1['fire_blk1'][1][0], axis=0) # self.hooks_lidar_enc1['fire_blk1'][1][0, -1, :, :]
+        im = (im - im.min()) / (im.max() - im.min())
+        im_enc1_fire1 = cv.resize(im, None, fx=8, fy=2, interpolation=cv.INTER_LINEAR)
+        enc_1_ims.append(im_enc1_fire1)
+
+        ### Encoder 2
+        # input normalmap
+        im = self.hooks_lidar_enc2['conv1a'][0][0, 0:3, :, :].transpose(1, 2, 0)
+        im = np.dstack([(im[:,:,i] - im[:,:,i].min())/(im[:,:,i].max() - im[:,:,i].min()) for i in range(3)])
+        im_enc2_in = cv.resize(im, None, fx=1, fy=2, interpolation=cv.INTER_LINEAR)
+        enc_2_ims.append(im_enc2_in)
+
+        # Conv1
+        im = np.mean(self.hooks_lidar_enc2['conv1a'][1][0], axis=0) # self.hooks_lidar_enc1['conv1a'][1][0, -1, :, :]
+        im = (im - im.min()) / (im.max() - im.min())
+        im_enc2_conv1 = cv.resize(im, None, fx=2, fy=2, interpolation=cv.INTER_LINEAR)
+        enc_2_ims.append(im_enc2_conv1)
+
+        # fire1
+        im = np.mean(self.hooks_lidar_enc2['fire_blk1'][1][0], axis=0) # self.hooks_lidar_enc1['fire_blk1'][1][0, -1, :, :]
+        im = (im - im.min()) / (im.max() - im.min())
+        im_enc2_fire1 = cv.resize(im, None, fx=8, fy=2, interpolation=cv.INTER_LINEAR)
+        enc_2_ims.append(im_enc2_fire1)
+
+        ### Enocder1
+        # plotting input
+        fig, axes = plt.subplots(figsize=(8, 2))
+        pos = axes.imshow(im_enc1_in, cmap="jet")
         axes.set_title("Input vertexmap image", fontsize=10)
         fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
         fig.tight_layout()
@@ -302,9 +339,7 @@ class Tester(Worker):
 
         # plotting conv1a
         fig, axes = plt.subplots(figsize=(8, 2))
-        im = np.mean(self.hooks_lidar_enc1['conv1a'][1][0], axis=0) # self.hooks_lidar_enc1['conv1a'][1][0, -1, :, :]
-        im = (im - im.min()) / (im.max() - im.min())
-        pos = axes.imshow(im**2, cmap="jet")
+        pos = axes.imshow(im_enc1_conv1**2, cmap="jet")
         axes.set_title("Output feature map conv1", fontsize=10)
         fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
         fig.tight_layout()
@@ -313,10 +348,7 @@ class Tester(Worker):
 
         # plotting fire1
         fig, axes = plt.subplots(figsize=(8, 2))
-        im = np.mean(self.hooks_lidar_enc1['fire_blk1'][1][0], axis=0) # self.hooks_lidar_enc1['fire_blk1'][1][0, -1, :, :]
-        im = (im - im.min()) / (im.max() - im.min())
-        im = cv.resize(im, None, fx=2.6, fy=0.65, interpolation=cv.INTER_CUBIC)
-        pos = axes.imshow(im, cmap="jet")
+        pos = axes.imshow(im_enc1_fire1, cmap="jet")
         axes.set_title("Output feature map fire1", fontsize=10)
         fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
         fig.tight_layout()
@@ -326,13 +358,7 @@ class Tester(Worker):
         ### Enocder2
         # plotting input
         fig, axes = plt.subplots(figsize=(8, 2))
-        im = self.hooks_lidar_enc2['conv1a'][0][0, 0:3, :, :].transpose(1, 2, 0)
-        #im = np.linalg.norm(im_xyz, axis=0)
-        #im = (im - im.min()) / (im.max() - im.min())
-        #im = np.log(2*im + 1)
-        im = cv.resize(im, None, fx=1, fy=2, interpolation=cv.INTER_CUBIC)
-        im = (im - im.min()) / (im.max() - im.min())
-        pos = axes.imshow(im, cmap="hsv")
+        pos = axes.imshow(im_enc2_in, cmap="hsv")
         axes.set_title("Input normalmap image", fontsize=10)
         #fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
         fig.tight_layout()
@@ -341,9 +367,7 @@ class Tester(Worker):
 
         # plotting conv1a
         fig, axes = plt.subplots(figsize=(8, 2))
-        im = np.mean(self.hooks_lidar_enc2['conv1a'][1][0], axis=0) # self.hooks_lidar_enc1['conv1a'][1][0, -1, :, :]
-        im = (im - im.min()) / (im.max() - im.min())
-        pos = axes.imshow(im, cmap="jet")
+        pos = axes.imshow(im_enc2_conv1, cmap="jet")
         axes.set_title("Output feature map conv1", fontsize=10)
         fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
         fig.tight_layout()
@@ -352,15 +376,24 @@ class Tester(Worker):
 
         # plotting fire1
         fig, axes = plt.subplots(figsize=(8, 2))
-        im = np.mean(self.hooks_lidar_enc2['fire_blk1'][1][0], axis=0) # self.hooks_lidar_enc1['fire_blk1'][1][0, -1, :, :]
-        im = (im - im.min()) / (im.max() - im.min())
-        im = cv.resize(im, None, fx=2.6, fy=0.65, interpolation=cv.INTER_CUBIC)
-        pos = axes.imshow(im, cmap="jet")
+        pos = axes.imshow(im_enc2_fire1, cmap="jet")
         axes.set_title("Output feature map fire1", fontsize=10)
         fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
+        axes.axis('off')
         fig.tight_layout()
         fig.savefig("{}/enc2_fire1_{}.png".format(self.out_dir, self.counter), dpi=800)
         plt.close(fig)
+
+        # ### get imahe
+        # io_buf = io.BytesIO()
+        # fig, axes = plt.subplots(1, 1)
+        # axes.imshow(im_enc2_fire1, cmap="jet")
+        # axes.axis('off')
+        # fig.savefig(io_buf, format='raw', bbox_inches='tight', pad_inches=0)
+        # io_buf.seek(0)
+        # img_arr = np.reshape(np.frombuffer(io_buf.getvalue(), dtype=np.uint8),
+        #                      newshape=(int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1))
+        # io_buf.close()
 
         # plotting fusion weights
         fig, axes = plt.subplots(2, 2, figsize=(8, 3))

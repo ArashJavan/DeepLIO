@@ -3,6 +3,7 @@ import glob
 import os
 import pickle
 import time  # for start stop calc
+import cv2 as cv
 from threading import Thread
 
 import numpy as np
@@ -61,6 +62,9 @@ class KittiRawData:
         # Find all the data files
         self._get_velo_files()
 
+        # Find all the camera files
+        self._get_camera_files()
+
         #self._load_calib()
         self._load_timestamps()
 
@@ -96,6 +100,11 @@ class KittiRawData:
         image = np.dstack((proj_xyz, proj_remission, proj_normal, proj_range))
         return image
 
+    def get_camera_image(self, idx):
+        image = cv.imread(self.camera_files[idx])
+        image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+        return image
+
     def get_imu_values(self, idx):
         oxt = self.oxts_unsync[idx]
         imu_values = np.array([[oxt[0].ax, oxt[0].ay, oxt[0].az,
@@ -119,6 +128,18 @@ class KittiRawData:
             self.velo_files = utils.subselect_files(
                 self.velo_files, self.frames)
         self.velo_files = np.asarray(self.velo_files)
+
+    def _get_camera_files(self):
+        # first try to get binary files
+        self.camera_files = sorted(glob.glob(
+            os.path.join(self.data_path_sync, 'image_02',
+                         'data', '*.png')))
+
+        # Subselect the chosen range of frames, if any
+        if self.frames is not None:
+            self.camera_files = utils.subselect_files(
+                self.camera_files, self.frames)
+        self.camera_files = np.asarray(self.camera_files)
 
     def _get_oxt_files(self):
         """Find and list data files for each sensor."""
@@ -248,6 +269,7 @@ class Kitti(data.Dataset):
         self.length_each_drive = []
         self.bins = []
         self.images = [None] * self.internal_seq_size
+        self.camera_images = [None] * self.internal_seq_size
 
         root_path_sync = ds_config['root-path-sync']
         root_path_unsync = ds_config['root-path-unsync']
@@ -310,9 +332,23 @@ class Kitti(data.Dataset):
         for i in range(self.internal_seq_size):
             threads[i].join()
 
+    def load_camera_images(self, dataset, indices):
+        threads = [None] * self.internal_seq_size
+
+        for i in range(self.internal_seq_size):
+            threads[i] = Thread(target=self.load_camera_image, args=(dataset, indices[i], i))
+            threads[i].start()
+
+        for i in range(self.internal_seq_size):
+            threads[i].join()
+
     def load_image(self, dataset, ds_index, img_index):
         img = dataset.get_velo_image(ds_index)
         self.images[img_index] = img
+
+    def load_camera_image(self, dataset, ds_index, img_index):
+        img = dataset.get_camera_image(ds_index)
+        self.camera_images[img_index] = img
 
     def load_imus(self, dataset, velo_timestamps):
         imus = []
@@ -402,11 +438,17 @@ class Kitti(data.Dataset):
         data = {'imus': imus, 'valids': valids}
         return data
 
-    def create_lidar_data(self, dataset, indices, velo_timespamps):
+    def create_lidar_data(self, dataset, indices):
         # load and transform images
         self.load_images(dataset, indices)
         org_images, proc_images = self.transform_images()
         data = {'images': proc_images, 'untrans-images': org_images}
+        return data
+
+    def create_camera_data(self, dataset, indices):
+        # load and transform images
+        self.load_camera_images(dataset, indices)
+        data = {'camera-images': torch.from_numpy(np.array(self.camera_images))}
         return data
 
     def create_data_deeplio(self, dataset, indices, velo_timespamps):
@@ -430,11 +472,13 @@ class Kitti(data.Dataset):
 
         lidar_data = {}
         if self.has_lidar:
-            lidar_data = self.create_lidar_data(dataset, indices, velo_timespamps)
+            lidar_data = self.create_lidar_data(dataset, indices)
 
         imu_data = {}
         if self.has_imu:
             imu_data = self.create_imu_data(dataset, indices, velo_timespamps)
+
+        #camera_data = self.create_camera_data(dataset, indices)
 
         arch_data = {**imu_data, **lidar_data}
 

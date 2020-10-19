@@ -16,6 +16,9 @@ def deeplio_collate(batch):
         res['images'] = images
         res['untrans-images'] = untrans_images
 
+        #images = torch.stack([b['data']['camera-images'] for b in batch])
+        #res['camera-images'] = images
+
     if has_imus:
         # IMU and ground-truth measurments can have different length btw. each pair of lidar frames,
         # so we do not change their size and let them as their are
