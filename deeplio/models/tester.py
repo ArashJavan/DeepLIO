@@ -213,7 +213,8 @@ class Tester(Worker):
                     pred_f2f_t_b = pred_f2f_t[b].detach().cpu().squeeze()
                     pred_f2f_w_b = pred_f2f_w[b].detach().cpu().squeeze()
 
-                    #if self.has_imu and not np.all(data['valids']):
+                    if self.has_imu and not np.all(data['valids']):
+                        print("{} not valid!".format(self.counter))
                     #    pred_f2f_t_b = gt_t
                     #    pred_f2f_w_b = gt_w
 
@@ -243,6 +244,9 @@ class Tester(Worker):
                     self.tensor_writer.add_scalar\
                         ("Loss test", losses.avg, step_val)
                     self.tensor_writer.flush()
+
+                if idx > 1000:
+                    break
 
         if curr_seq is not None:
             curr_seq.write_to_file()
@@ -279,15 +283,15 @@ class Tester(Worker):
 
 
     def process_hooks(self, data):
-
         self.counter += 1
 
-        #if self.counter % 5 != 0:
+        #if self.counter < 50:
         #    return
+
         enc_1_ims = []
         enc_2_ims = []
 
-        #### Encoder 1
+        #### Encoder 1 ##########################################
         # input vertexmap
         im_xyz = self.hooks_lidar_enc1['conv1a'][0][0, 0:3, :, :]
         im = np.linalg.norm(im_xyz, axis=0)
@@ -299,7 +303,7 @@ class Tester(Worker):
         # Conv1
         im = np.mean(self.hooks_lidar_enc1['conv1a'][1][0], axis=0) # self.hooks_lidar_enc1['conv1a'][1][0, -1, :, :]
         im = (im - im.min()) / (im.max() - im.min())
-        im_enc1_conv1 = cv.resize(im, None, fx=2, fy=2, interpolation=cv.INTER_LINEAR)
+        im_enc1_conv1 = cv.resize(im**2, None, fx=2, fy=2, interpolation=cv.INTER_LINEAR)
         enc_1_ims.append(im_enc1_conv1)
 
         # fire1
@@ -308,10 +312,11 @@ class Tester(Worker):
         im_enc1_fire1 = cv.resize(im, None, fx=8, fy=2, interpolation=cv.INTER_LINEAR)
         enc_1_ims.append(im_enc1_fire1)
 
-        ### Encoder 2
+        ### Encoder 2 ##########################################
         # input normalmap
-        im = self.hooks_lidar_enc2['conv1a'][0][0, 0:3, :, :].transpose(1, 2, 0)
-        im = np.dstack([(im[:,:,i] - im[:,:,i].min())/(im[:,:,i].max() - im[:,:,i].min()) for i in range(3)])
+        im_norms = self.hooks_lidar_enc2['conv1a'][0][0, 0:3, :, :].transpose(1, 2, 0)
+        im = np.dstack([(im_norms[:,:,i] - im_norms[:,:,i].min())/(im_norms[:,:,i].max() - im_norms[:,:,i].min())
+                        for i in range(3)])
         im_enc2_in = cv.resize(im, None, fx=1, fy=2, interpolation=cv.INTER_LINEAR)
         enc_2_ims.append(im_enc2_in)
 
@@ -327,101 +332,53 @@ class Tester(Worker):
         im_enc2_fire1 = cv.resize(im, None, fx=8, fy=2, interpolation=cv.INTER_LINEAR)
         enc_2_ims.append(im_enc2_fire1)
 
-        ### Enocder1
-        # plotting input
-        fig, axes = plt.subplots(figsize=(8, 2))
-        pos = axes.imshow(im_enc1_in, cmap="jet")
-        axes.set_title("Input vertexmap image", fontsize=10)
-        fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
+        ### Plotting ##########################################
+        names_enc1 = ['enc1_vertexmap', 'enc1_conv1a']
+        names_enc2 = ['enc2_normalmap', 'enc2_conv1a']
+
+        for i in range(len(names_enc1)):
+            # plotting input
+            fig, axes = plt.subplots(figsize=(8, 2))
+            pos = axes.imshow(enc_1_ims[i], cmap="jet")
+            axes.axis('off')
+            # axes.set_title("Input vertexmap image", fontsize=10)
+            # fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
+            fig.tight_layout()
+            fig.savefig("{}/{}_{}.png".format(self.out_dir, names_enc1[i], self.counter),
+                        bbox_inches='tight', pad_inches=0)
+            plt.close(fig)
+
+        for i in range(len(names_enc2)):
+            # plotting input
+            fig, axes = plt.subplots(figsize=(8, 2))
+            pos = axes.imshow(enc_2_ims[i], cmap="jet")
+            axes.axis('off')
+            # axes.set_title("Input vertexmap image", fontsize=10)
+            # fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
+            fig.tight_layout()
+            fig.savefig("{}/{}_{}.png".format(self.out_dir, names_enc2[i], self.counter),
+                        bbox_inches='tight', pad_inches=0)
+            plt.close(fig)
+
+        ### Plotting fusion weights ##########################################
+        num_bins = np.linspace(0, 1, 20)
+
+        s1 = self.model.fusion_net.s1_feat.flatten().detach().cpu().numpy()
+        s2 = self.model.fusion_net.s2_feat.flatten().detach().cpu().numpy()
+        n_s1, bins_s1 = np.histogram(s1, num_bins, density=False)
+        n_s2, bins_s2 = np.histogram(s2, num_bins, density=False)
+        n_max = 128. # np.concatenate([n_s1, n_s2]).max()
+
+        fig, axes = plt.subplots(1, 1, figsize=(8, 2))
+        axes.bar(bins_s1[:-1], n_s1/n_max, alpha=0.8, width=np.diff(num_bins), color='blue', label='LiDAR fusion weights')
+        axes.bar(bins_s2[:-1], n_s2/n_max, alpha=0.8,  width=np.diff(num_bins), color='orange', label='IMU fusion weights')
+        axes.set_ylim([0, 1])
+        #axes.set_title("Lidar-Feature-Net fusion weights", fontsize=10)
+        axes.legend()
+        axes.grid(True)
         fig.tight_layout()
-        fig.savefig("{}/enc1_vertexmap_{}.png".format(self.out_dir, self.counter), dpi=800)
-        plt.close(fig)
-
-        # plotting conv1a
-        fig, axes = plt.subplots(figsize=(8, 2))
-        pos = axes.imshow(im_enc1_conv1**2, cmap="jet")
-        axes.set_title("Output feature map conv1", fontsize=10)
-        fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
-        fig.tight_layout()
-        fig.savefig("{}/enc1_connv1a_{}.png".format(self.out_dir, self.counter), dpi=800)
-        plt.close(fig)
-
-        # plotting fire1
-        fig, axes = plt.subplots(figsize=(8, 2))
-        pos = axes.imshow(im_enc1_fire1, cmap="jet")
-        axes.set_title("Output feature map fire1", fontsize=10)
-        fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
-        fig.tight_layout()
-        fig.savefig("{}/enc1_fire1_{}.png".format(self.out_dir, self.counter), dpi=800)
-        plt.close(fig)
-
-        ### Enocder2
-        # plotting input
-        fig, axes = plt.subplots(figsize=(8, 2))
-        pos = axes.imshow(im_enc2_in, cmap="hsv")
-        axes.set_title("Input normalmap image", fontsize=10)
-        #fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
-        fig.tight_layout()
-        fig.savefig("{}/enc2_normalmap_{}.png".format(self.out_dir, self.counter), dpi=800)
-        plt.close(fig)
-
-        # plotting conv1a
-        fig, axes = plt.subplots(figsize=(8, 2))
-        pos = axes.imshow(im_enc2_conv1, cmap="jet")
-        axes.set_title("Output feature map conv1", fontsize=10)
-        fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
-        fig.tight_layout()
-        fig.savefig("{}/enc2_connv1a_{}.png".format(self.out_dir, self.counter), dpi=800)
-        plt.close(fig)
-
-        # plotting fire1
-        fig, axes = plt.subplots(figsize=(8, 2))
-        pos = axes.imshow(im_enc2_fire1, cmap="jet")
-        axes.set_title("Output feature map fire1", fontsize=10)
-        fig.colorbar(pos, ax=axes, fraction=0.0075, pad=0.02)
-        axes.axis('off')
-        fig.tight_layout()
-        fig.savefig("{}/enc2_fire1_{}.png".format(self.out_dir, self.counter), dpi=800)
-        plt.close(fig)
-
-        # ### get imahe
-        # io_buf = io.BytesIO()
-        # fig, axes = plt.subplots(1, 1)
-        # axes.imshow(im_enc2_fire1, cmap="jet")
-        # axes.axis('off')
-        # fig.savefig(io_buf, format='raw', bbox_inches='tight', pad_inches=0)
-        # io_buf.seek(0)
-        # img_arr = np.reshape(np.frombuffer(io_buf.getvalue(), dtype=np.uint8),
-        #                      newshape=(int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1))
-        # io_buf.close()
-
-        # plotting fusion weights
-        fig, axes = plt.subplots(2, 2, figsize=(8, 3))
-
-        im_xyz = self.hooks_lidar_enc1['conv1a'][0][0, 0:3, :, :]
-        im = np.linalg.norm(im_xyz, axis=0)
-        im = (im - im.min()) / (im.max() - im.min())
-        im = np.log(2*im + 1)
-        axes[0, 0].imshow(im, cmap="gist_rainbow", vmin=0, vmax=1)
-        axes[0, 0].set_title("Input image t0", fontsize=10)
-
-        im_xyz = self.hooks_lidar_enc1['conv1a'][0][0, 3:, :, :]
-        im = np.linalg.norm(im_xyz, axis=0)
-        im = (im - im.min()) / (im.max() - im.min())
-        im = np.log(2*im + 1)
-        axes[0, 1].imshow(im, cmap="gist_rainbow", vmin=0, vmax=1)
-        axes[0, 1].set_title("Input image t1", fontsize=10)
-
-        axes[1, 0].hist(self.model.fusion_net.s1_feat.flatten().detach().cpu().numpy(), bins=100, density=True, facecolor='g', alpha=0.75)
-        axes[1, 0].set_title("Lidar-Feature-Net fusion weights", fontsize=10)
-        axes[1, 0].grid(True)
-
-        axes[1, 1].hist(self.model.fusion_net.s2_feat.flatten().detach().cpu().numpy(), bins=100, density=True, facecolor='g', alpha=0.75)
-        axes[1, 1].set_title("IMU-Feature-Net fusion weights", fontsize=10)
-        axes[1, 1].grid(True)
-
-        fig.tight_layout()
-        fig.savefig("{}/fusion_weights_{}.png".format(self.out_dir, self.counter).format(self.counter), dpi=400)
+        fig.savefig("{}/fusion_weights_{}.png".format(self.out_dir, self.counter).format(self.counter),
+                    bbox_inches='tight', pad_inches=0.1)
         plt.close(fig)
 
     def get_activation(self, name, hooks):
