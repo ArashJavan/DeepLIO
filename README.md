@@ -80,26 +80,25 @@ This module is responsible for fusing the features extract fom LiDAR and IMU.
 At least in this module the fused features are used to learn the hidden state, which shall explain the odometry information 
 encoded in these features.
 
-<img src="resources/images/deeplio.png" alt="deeplio" width="500"/>
+<img src="resources/images/deepliov2.png" alt="deeplio" width="500"/>
 
 #### __1.3.1 LiDAR-Feature-Nets__
-The inputs to this module are the projected LiDAR frames, which in the current configuration is built by stacking two remission (intensity) and
+The inputs to this module are the projected LiDAR frames and their normal images, which in the current configuration is built by stacking two remission (intensity) and
 depth channels together. The module itself is made of an arbitrary Convolutional Neural Network (CNN). These networks are 
-implemented as a [siamese netowrk](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L135)
-with shared parameters. At this point in time there are three CNN-Architectures implemented:
+implemented as a [siamese netowrk](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L135).
+At this point in time there are four CNN-Architectures implemented:
 
-1.  [Simple-Feature-Net-0](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L116)
-This network is made of standard CNN-Layers which are stacked together.
-<img src="resources/images/lidar_feat_s0.png" alt="lidar_s0" width="500"/>
- 
-2.  [Simple-Feature-Net-1](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L151)
-This network is also made of standard CNN-Layers which are stacked together, but additionally one can similar to ResNET
-also activate bypass connections between layers. Furthermore the middle layers are duplicated, since in these layers
-the feautre-map has for both vertical and horizontal directions nearly the same field of view (FOV) resolution, 
-if you assume it as degrees. 
-<img src="resources/images/lidar_feat_s1.png" alt="lidar_s1" width="500"/>
+1.  [FlowNet-Feature-Net]
 
-3. [PointSeg-Feature-Net-1](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L43)
+__TODO__ adding link to flownet here.
+
+2.  [ResNet-Feature-Net]
+
+__TODO__ adding link to resnet here.
+
+3.  [Simple-Feature-Net]
+
+4. [PointSeg-Feature-Net](https://github.com/ArashJavan/DeepLIO/blob/master/deeplio/models/nets/lidar_feat_nets.py#L43)
 This network is the implementation of the more demanding [PointSeg Netowrk](https://github.com/ArashJavan/PointSeg). 
 the network it self is made of three functional layers, the so called Fire layers,  squeeze reweighting
 layer and enlargement layer. An interested reader may find more information about each of those layers in the original
@@ -110,23 +109,28 @@ All the above listed networks can be found and configured in the configuration f
 ```yaml
 ### Lidar Feature Netowrks ###########################
 # feature network simple0 with conv layers
-lidar-feat-simple-0:
-  dropout: 0.
-  fusion: cat # [cat, sub]
-
-# feature network simple0 with bypassed conv layers
-lidar-feat-simple-1:
-  dropout: 0.
-  fusion: cat # [cat, sub]
-  bypass: true
 
 # feature network pointseg
 lidar-feat-pointseg:  # pointseg feature
-  dropout: 0.
+  dropout: 0.1
   classes: ['unknown', 'object']
-  bypass: true
-  fusion: cat # [cat, sub]
-  part: "encoder" # [encoder, encoder+decoder]
+  bypass: "simple"
+  fusion: add # [cat, sub, add]
+  part: "encoder" # [encoder]
+
+lidar-feat-flownet:
+  dropout: 0.
+  fusion: add # [cat, sub, add]
+
+lidar-feat-resnet:
+  dropout: 0.25
+  fusion: add # [cat, sub, add]
+
+# feature network simple0 with bypassed conv layers
+lidar-feat-simple-1:
+  dropout: 0.25
+  fusion: add # [cat, sub, add]
+  bypass: false
 ```
 
 With the keyword _fusion_ you can define, if the both threads of the siamese network should be concatenated together or subtracted.
