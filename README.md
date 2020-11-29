@@ -318,3 +318,16 @@ The Ouputs are:
 - Checkpoints. 
 - Logfile.
 - Tensorboard logfile.
+
+
+### Citation
+
+If you use this package for your research, a footnote with the link to this repository is appreciated: https://github.com/ArashJavan/DeepLIO.
+For citation with BibTeX:
+
+@misc{deeplio2020,
+  title={DeepLIO: Deep Lidar Inertial Odometry.},
+  author={Javanmard-Gh., Arash},
+  howpublished={\url{https://github.com/ArashJavan/DeepLIO}},
+  year={2020}
+}
